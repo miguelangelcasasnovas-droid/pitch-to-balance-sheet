@@ -6,6 +6,26 @@ Actualizado: 25/09/2026
 
 Cerrada el 25/09/2026 con el OK del usuario. El plan aprobado, con las decisiones incorporadas, está en [`plan.md`](plan.md).
 
+## Fase 1: cerrada
+
+Hecha el 25/09/2026 en Claude Code, en el Mac. Falta el OK del usuario para empezar la fase 2.
+
+| Qué | Resultado |
+| --- | --- |
+| Python | El del sistema es 3.9.6 y no se ha tocado. `uv python install 3.11` instaló la 3.11.15 en `~/.local/share/uv/python` y dejó el enlace `~/.local/bin/python3.11`. `.venv` usa la 3.11.15 |
+| Dependencias | Versiones de la sección 11 del plan fijadas en `pyproject.toml`, más `python-dotenv==1.2.3` y `PyYAML==6.0.3` (las últimas en PyPI a 25/09/2026). `uv.lock` fija también las transitivas: 80 paquetes |
+| Cachés | uv en `.cache/uv`, ruff en `.cache/ruff`, pytest en `.cache/pytest` y pre-commit en `.cache/pre-commit`. Fuera del proyecto solo se escribió en la carpeta de uv |
+| pre-commit | Hooks locales: gitleaks 8.30.1 en `.tools/`, con el sha256 comprobado, y el ruff de `.venv`. Se instalan con `scripts/install-hooks.sh`, que fija `PRE_COMMIT_HOME` dentro del hook. Si se lanza `pre-commit run` a mano, hay que anteponer `PRE_COMMIT_HOME=.cache/pre-commit` |
+| CI | `.github/workflows/ci.yml`: `uv sync --locked`, `ruff check .` y `pytest` en cada push y PR, con las acciones fijadas por SHA. Los tests no usan la red: `tests/conftest.py` bloquea cualquier conexión |
+| Git | `main` con el primer commit (`27dc502`). Rama `ci-check` con un test que falla a propósito (`e9f42c7`). La identidad del autor está solo en `.git/config` |
+
+Comprobaciones hechas (la salida real está en el cierre de la fase):
+
+1. `python --version` dentro de `.venv`: 3.11.15.
+2. `ruff check .`: "All checks passed!". `pytest`: 4 passed.
+3. Commit con una clave falsa `AKIA...`: gitleaks lo bloquea (regla `aws-access-token`, exit 1). El archivo de prueba se eliminó.
+4. En `ci-check`, `pytest` da 1 failed y 4 passed, con exit 1. `main` sigue en verde.
+
 ## Decisiones
 
 1. **Carpeta de trabajo:** `~/football-club-finance`.
@@ -14,23 +34,29 @@ Cerrada el 25/09/2026 con el OK del usuario. El plan aprobado, con las decisione
 4. **Dependencias:** se añaden `python-dotenv` y `PyYAML` al stack.
 5. **La fase 1 se hace en Claude Code, en el Mac.**
 
+Tomadas en la fase 1, a falta del OK del usuario:
+
+6. **Hooks locales en lugar del hook oficial de gitleaks.** El oficial compila gitleaks con Go (329 MB de caché en la fase 0), y Go escribe fuera del proyecto: en `~/Library/Caches/go-build` y en su telemetría. Se aplica la mitigación de la sección 10 del plan, con el binario fijado en `.tools/`. ruff usa el de `.venv`, así su versión se fija en un solo sitio.
+7. **gitleaks 8.30.1**, la última publicada (21/03/2026), en lugar de la 8.28.0 que se probó en la fase 0.
+8. **`uv.lock` en git**, para que el CI instale exactamente lo mismo que el Mac.
+
 ## Pendientes
 
 | Pendiente | Para cuándo | Detalle |
 | --- | --- | --- |
+| Versión de yfinance | Antes de la fase 2 | El plan da la 0.2.66 como publicada a 25/09/2026, pero la última en PyPI es la 1.7.0 (26/08/2026); la 0.2.66 salió el 17/09/2025. Queda fijada la 0.2.66, como dice el plan. Decide el usuario, y después se corrige la sección 11 del plan |
+| Push de `main` y `ci-check` | Con el OK de la fase 1 | Lo hace el usuario. `main` tiene que salir en verde y `ci-check` en rojo; después se borra `ci-check`, en local y en GitHub. El CI todavía no se ha ejecutado en GitHub: solo se validó el YAML |
 | Clave de la API de Companies House | Antes de la fase 2 | Gratuita, de una aplicación real: la Document API no funciona en el sandbox. Va solo en `.env`. Si no está configurada, el trabajo se para y se pide |
 | URLs de los PDFs de Juventus, Celtic y Lazio | Fase 2 | Sus webs no tienen los enlaces en el HTML. Se fijan a mano en `config/sources.yaml` |
 | Fuentes de FC Porto | Fase 2 | fcporto.pt devolvió 403 a la descarga automática. Alternativa a comprobar: los registros de la CMVM |
+| `data/raw/` en git | Fase 2 | Existe en local, pero git no la guarda hasta que haya `data/raw/manifest.csv` |
+| Hooks fuera del Mac | Si se trabaja desde la VM Linux | El hook apunta al `.venv` del Mac y el binario de gitleaks es de macOS arm64. Desde la VM, `git commit` fallaría |
 
 El resto de comprobaciones de la fase 2 está en la sección 7.1 y en los riesgos de `plan.md`.
 
-## Siguiente paso: fase 1 en Claude Code, en el Mac
+## Siguiente paso
 
-1. Comprobar `python3 --version`: hace falta 3.11 o superior.
-2. Crear `src/`, `tests/`, `data/raw`, `data/processed`, `app/` y `config/`.
-3. `pyproject.toml` con versiones fijadas (incluye `python-dotenv` y `PyYAML`), `.env.example` sin valores y `.gitignore`.
-4. `.pre-commit-config.yaml` con gitleaks y ruff, con la caché de pre-commit dentro del proyecto.
-5. `.github/workflows/ci.yml` con ruff y pytest en cada push y PR.
-6. Un test que falle a propósito para ver el CI en rojo cuando el usuario haga push. Después se quita.
-7. Un commit de prueba con una clave falsa tipo `AKIA...` que gitleaks tiene que bloquear.
-8. Pegar la salida real de `ruff check .` y `pytest`, y parar hasta el OK.
+1. OK del usuario a la fase 1.
+2. Push de `main` y `ci-check` por parte del usuario, para ver el CI en verde y en rojo. Después se borra `ci-check`.
+3. Decidir la versión de yfinance y guardar la clave de Companies House en `.env`.
+4. Fase 2: medir la capa de texto de los 6 PDFs ingleses (sección 7.1 del plan).
