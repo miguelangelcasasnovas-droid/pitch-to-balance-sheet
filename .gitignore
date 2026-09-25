@@ -1,0 +1,22 @@
+# Secretos: las claves van solo aquí
+.env
+
+# Entornos, cachés y herramientas, todo dentro del proyecto
+.venv/
+.venv-linux/
+.cache/
+.tools/
+
+# Documentos descargados: fuera de git salvo el manifiesto
+data/raw/*
+!data/raw/manifest.csv
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# macOS
+.DS_Store

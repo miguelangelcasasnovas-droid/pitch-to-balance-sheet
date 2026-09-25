@@ -1,0 +1,26 @@
+# ruff y pytest en cada push y PR.
+# Solo la instalación de dependencias usa la red. Los tests no: tests/conftest.py
+# bloquea cualquier conexión y trabajan con fixtures grabados.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version: "0.11.24"
+      - name: Instalar dependencias fijadas (uv.lock)
+        run: uv sync --locked
+      - name: ruff
+        run: uv run --no-sync ruff check .
+      - name: pytest
+        run: uv run --no-sync pytest
