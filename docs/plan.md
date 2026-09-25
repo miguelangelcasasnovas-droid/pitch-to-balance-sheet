@@ -283,14 +283,14 @@ Versiones publicadas a 25/09/2026, comprobadas en un entorno de prueba en la nub
 | pandera | 0.33.1 | Validó un esquema de prueba con pandas 3.0.6 |
 | pdfplumber | 0.11.10 | |
 | duckdb | 1.5.5 | |
-| yfinance | 0.2.66 | Avisos de funciones obsoletas con pandas 3 |
+| yfinance | 1.7.0 | Publicada el 26/08/2026. Sustituye a la 0.2.66 (17/09/2025), que daba avisos de funciones obsoletas con pandas 3 |
 | requests | 2.34.2 | |
 | plotly | 7.1.0 | |
 | streamlit | 1.64.0 | |
 | pytest | 9.1.1 | |
 | ruff | 0.16.9 | |
 | pre-commit | 4.6.2 | |
-| python-dotenv, PyYAML | A fijar en la fase 1 | Añadidos por la decisión 4 |
+| python-dotenv, PyYAML | 1.2.3 y 6.0.3 | Añadidos por la decisión 4 y fijados en la fase 1 |
 
 ## 12. Verificaciones hechas en la fase 0
 

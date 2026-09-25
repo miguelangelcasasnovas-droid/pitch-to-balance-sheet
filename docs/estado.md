@@ -8,7 +8,7 @@ Cerrada el 25/09/2026 con el OK del usuario. El plan aprobado, con las decisione
 
 ## Fase 1: cerrada
 
-Hecha el 25/09/2026 en Claude Code, en el Mac. Falta el OK del usuario para empezar la fase 2.
+Hecha el 25/09/2026 en Claude Code, en el Mac, y cerrada ese mismo día con el OK del usuario.
 
 | Qué | Resultado |
 | --- | --- |
@@ -34,18 +34,18 @@ Comprobaciones hechas (la salida real está en el cierre de la fase):
 4. **Dependencias:** se añaden `python-dotenv` y `PyYAML` al stack.
 5. **La fase 1 se hace en Claude Code, en el Mac.**
 
-Tomadas en la fase 1, a falta del OK del usuario:
+Tomadas en la fase 1 y aceptadas con su OK:
 
 6. **Hooks locales en lugar del hook oficial de gitleaks.** El oficial compila gitleaks con Go (329 MB de caché en la fase 0), y Go escribe fuera del proyecto: en `~/Library/Caches/go-build` y en su telemetría. Se aplica la mitigación de la sección 10 del plan, con el binario fijado en `.tools/`. ruff usa el de `.venv`, así su versión se fija en un solo sitio.
 7. **gitleaks 8.30.1**, la última publicada (21/03/2026), en lugar de la 8.28.0 que se probó en la fase 0.
 8. **`uv.lock` en git**, para que el CI instale exactamente lo mismo que el Mac.
+9. **yfinance 1.7.0** (26/08/2026) en lugar de la 0.2.66 (17/09/2025), que daba avisos de funciones obsoletas con pandas 3. Decidido por el usuario el 25/09/2026, con la sección 11 del plan ya corregida.
 
 ## Pendientes
 
 | Pendiente | Para cuándo | Detalle |
 | --- | --- | --- |
-| Versión de yfinance | Antes de la fase 2 | El plan da la 0.2.66 como publicada a 25/09/2026, pero la última en PyPI es la 1.7.0 (26/08/2026); la 0.2.66 salió el 17/09/2025. Queda fijada la 0.2.66, como dice el plan. Decide el usuario, y después se corrige la sección 11 del plan |
-| Push de `main` y `ci-check` | Con el OK de la fase 1 | Lo hace el usuario. `main` tiene que salir en verde y `ci-check` en rojo; después se borra `ci-check`, en local y en GitHub. El CI todavía no se ha ejecutado en GitHub: solo se validó el YAML |
+| Push de `main` y `ci-check` | Antes de la fase 2 | Lo hace el usuario. `main` tiene que salir en verde y `ci-check` en rojo; después se borra `ci-check`, en local y en GitHub. El CI todavía no se ha ejecutado en GitHub: solo se validó el YAML |
 | Clave de la API de Companies House | Antes de la fase 2 | Gratuita, de una aplicación real: la Document API no funciona en el sandbox. Va solo en `.env`. Si no está configurada, el trabajo se para y se pide |
 | URLs de los PDFs de Juventus, Celtic y Lazio | Fase 2 | Sus webs no tienen los enlaces en el HTML. Se fijan a mano en `config/sources.yaml` |
 | Fuentes de FC Porto | Fase 2 | fcporto.pt devolvió 403 a la descarga automática. Alternativa a comprobar: los registros de la CMVM |
@@ -56,7 +56,6 @@ El resto de comprobaciones de la fase 2 está en la sección 7.1 y en los riesgo
 
 ## Siguiente paso
 
-1. OK del usuario a la fase 1.
-2. Push de `main` y `ci-check` por parte del usuario, para ver el CI en verde y en rojo. Después se borra `ci-check`.
-3. Decidir la versión de yfinance y guardar la clave de Companies House en `.env`.
-4. Fase 2: medir la capa de texto de los 6 PDFs ingleses (sección 7.1 del plan).
+1. Push de `main` y `ci-check` por parte del usuario, para ver el CI en verde y en rojo. Después se borra `ci-check`.
+2. Guardar la clave de Companies House en `.env`.
+3. Fase 2: medir la capa de texto de los 6 PDFs ingleses (sección 7.1 del plan).
