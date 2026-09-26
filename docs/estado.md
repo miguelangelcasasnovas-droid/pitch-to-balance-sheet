@@ -1,6 +1,6 @@
 # Estado del proyecto
 
-Actualizado: 25/09/2026
+Actualizado: 26/09/2026
 
 ## Fase 0: cerrada
 
@@ -17,7 +17,7 @@ Hecha el 25/09/2026 en Claude Code, en el Mac, y cerrada ese mismo día con el O
 | Cachés | uv en `.cache/uv`, ruff en `.cache/ruff`, pytest en `.cache/pytest` y pre-commit en `.cache/pre-commit`. Fuera del proyecto solo se escribió en la carpeta de uv |
 | pre-commit | Hooks locales: gitleaks 8.30.1 en `.tools/`, con el sha256 comprobado, y el ruff de `.venv`. Se instalan con `scripts/install-hooks.sh`, que fija `PRE_COMMIT_HOME` dentro del hook. Si se lanza `pre-commit run` a mano, hay que anteponer `PRE_COMMIT_HOME=.cache/pre-commit` |
 | CI | `.github/workflows/ci.yml`: `uv sync --locked`, `ruff check .` y `pytest` en cada push y PR, con las acciones fijadas por SHA. Los tests no usan la red: `tests/conftest.py` bloquea cualquier conexión |
-| Git | `main` con el primer commit (`27dc502`). Rama `ci-check` con un test que falla a propósito (`e9f42c7`). La identidad del autor está solo en `.git/config` |
+| Git | Repo en GitHub, [`miguelangelcasasnovas-droid/pitch-to-balance-sheet`](https://github.com/miguelangelcasasnovas-droid/pitch-to-balance-sheet), creado por el usuario. Solo queda la rama `main`: `ci-check` (`e9f42c7`, con el test que falla a propósito) se borró el 26/09/2026 en local y en origin. La identidad del autor está solo en `.git/config` |
 
 Comprobaciones hechas (la salida real está en el cierre de la fase):
 
@@ -25,6 +25,7 @@ Comprobaciones hechas (la salida real está en el cierre de la fase):
 2. `ruff check .`: "All checks passed!". `pytest`: 4 passed.
 3. Commit con una clave falsa `AKIA...`: gitleaks lo bloquea (regla `aws-access-token`, exit 1). El archivo de prueba se eliminó.
 4. En `ci-check`, `pytest` da 1 failed y 4 passed, con exit 1. `main` sigue en verde.
+5. CI en GitHub Actions, tras el push del usuario: `main` en verde y `ci-check` en rojo, según comprobó el usuario el 26/09/2026.
 
 ## Decisiones
 
@@ -45,7 +46,6 @@ Tomadas en la fase 1 y aceptadas con su OK:
 
 | Pendiente | Para cuándo | Detalle |
 | --- | --- | --- |
-| Push de `main` y `ci-check` | Antes de la fase 2 | Lo hace el usuario. `main` tiene que salir en verde y `ci-check` en rojo; después se borra `ci-check`, en local y en GitHub. El CI todavía no se ha ejecutado en GitHub: solo se validó el YAML |
 | Clave de la API de Companies House | Antes de la fase 2 | Gratuita, de una aplicación real: la Document API no funciona en el sandbox. Va solo en `.env`. Si no está configurada, el trabajo se para y se pide |
 | URLs de los PDFs de Juventus, Celtic y Lazio | Fase 2 | Sus webs no tienen los enlaces en el HTML. Se fijan a mano en `config/sources.yaml` |
 | Fuentes de FC Porto | Fase 2 | fcporto.pt devolvió 403 a la descarga automática. Alternativa a comprobar: los registros de la CMVM |
@@ -56,6 +56,5 @@ El resto de comprobaciones de la fase 2 está en la sección 7.1 y en los riesgo
 
 ## Siguiente paso
 
-1. Push de `main` y `ci-check` por parte del usuario, para ver el CI en verde y en rojo. Después se borra `ci-check`.
-2. Guardar la clave de Companies House en `.env`.
-3. Fase 2: medir la capa de texto de los 6 PDFs ingleses (sección 7.1 del plan).
+1. Guardar la clave de Companies House en `.env`.
+2. Fase 2: medir la capa de texto de los 6 PDFs ingleses (sección 7.1 del plan).
