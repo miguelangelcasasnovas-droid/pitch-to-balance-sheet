@@ -1,0 +1,36 @@
+# Clubes del universo. Fuente: docs/plan.md, sección 7.1, con las fichas de Companies House
+# consultadas el 25/09/2026 (https://find-and-update.company-information.service.gov.uk/company/<número>).
+#
+# fiscal_year_end: día y mes de cierre (MM-DD). La temporada es el año fiscal que cierra en ella:
+# un cierre a 31/05/2025 o a 30/06/2025 es la temporada 2024/25.
+clubs:
+  - club_id: arsenal
+    name: Arsenal
+    entity: Arsenal Holdings Limited
+    companies_house_number: "04250459"
+    fiscal_year_end: "05-31"
+  - club_id: chelsea
+    name: Chelsea
+    entity: Chelsea FC Holdings Limited
+    companies_house_number: "02536231"
+    fiscal_year_end: "06-30"
+  - club_id: liverpool
+    name: Liverpool
+    entity: The Liverpool Football Club and Athletic Grounds Limited
+    companies_house_number: "00035668"
+    fiscal_year_end: "05-31"
+  - club_id: manchester_city
+    name: Manchester City
+    entity: Manchester City Football Club Limited
+    companies_house_number: "00040946"
+    fiscal_year_end: "06-30"
+  - club_id: tottenham
+    name: Tottenham Hotspur
+    entity: Tottenham Hotspur Limited
+    companies_house_number: "01706358"
+    fiscal_year_end: "06-30"
+  - club_id: newcastle
+    name: Newcastle United
+    entity: Newcastle United Limited
+    companies_house_number: "02529667"
+    fiscal_year_end: "06-30"

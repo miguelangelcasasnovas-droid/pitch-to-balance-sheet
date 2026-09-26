@@ -27,9 +27,9 @@ Comprobaciones hechas (la salida real está en el cierre de la fase):
 4. En `ci-check`, `pytest` da 1 failed y 4 passed, con exit 1. `main` sigue en verde.
 5. CI en GitHub Actions, tras el push del usuario: `main` en verde y `ci-check` en rojo, según comprobó el usuario el 26/09/2026.
 
-## Fase 2a: medición de la capa de texto (en curso)
+## Fase 2a: medición de la capa de texto (hecha, a falta del OK)
 
-Cuentas 2024/25 de los 6 clubes ingleses, descargadas con la API de Companies House (sección 7.1 del plan).
+Cuentas 2024/25 de los 6 clubes ingleses, descargadas con la API de Companies House (sección 7.1 del plan). Hecha el 26/09/2026. No se ha extraído ninguna cifra.
 
 **Criterio de clasificación, fijado el 26/09/2026 antes de medir:**
 
@@ -41,6 +41,34 @@ Cuentas 2024/25 de los 6 clubes ingleses, descargadas con la API de Companies Ho
   - **mixto:** entre el 20% y el 80%.
 - **Palabras clave,** sin distinguir mayúsculas: "Turnover" o "Revenue", y "Staff costs" o "Wages". Se informan aparte y no cambian la clasificación. Si un PDF de texto no las contiene, se marca para revisarlo.
 - **Regla de la decisión 3:** solo cuentan los PDFs de imagen. Con 3 o más de 6, se propone OCR para esos; con menos, quedan como hueco.
+
+**Descarga** (`python -m pitch_to_balance_sheet download`): 6 de 6, sin errores y con una sola presentación de cuentas por club. Las páginas y la fecha de depósito coinciden con la sección 7.1 del plan. Los 6 documentos están solo en PDF, sin XHTML, y Companies House los marca como presentados en papel (`paper_filed: true`). URL, fecha y sha256 están en `data/raw/manifest.csv`, y los datos de cada presentación en `data/processed/companies_house_filings_2024_25.csv`.
+
+**Medición** (`python -m pitch_to_balance_sheet text-layer`, sale con exit 1 por los dos ilegibles):
+
+| Club | Formato | Páginas | Págs. con texto | Caracteres por página | Palabras clave | Clasificación |
+| --- | --- | --- | --- | --- | --- | --- |
+| Arsenal | PDF | 45 | 0 | 0 en todas | ninguna | imagen |
+| Chelsea | PDF | 46 | 0 | 0 en todas | ninguna | imagen |
+| Liverpool | PDF | 38 según la API | — | — | — | ilegible con pdfplumber |
+| Manchester City | PDF | 39 | 0 | 0 en todas | ninguna | imagen |
+| Tottenham Hotspur | PDF | 65 según la API | — | — | — | ilegible con pdfplumber |
+| Newcastle United | PDF | 47 | 0 | 0 en todas | ninguna | imagen |
+
+El detalle por página está en `data/processed/text_layer_2024_25.csv`.
+
+- **Liverpool y Tottenham:** pdfplumber falla con `PdfminerException(PSEOF('Unexpected EOF'))`. El `startxref` del PDF no apunta a la tabla xref: en Liverpool apunta al byte 22.887 y la tabla está en el 1.743.426; en Tottenham, al 39.118 y la tabla está en el 2.641.632. Arsenal tiene el mismo defecto (27.097 frente a 2.026.252), pero ahí pdfminer lo recupera. Como diagnóstico aparte del criterio, pypdfium2 abre los dos: 38 y 65 páginas, todas con imagen y 0 caracteres.
+- **Regla de la decisión 3:** 4 de 6 son imagen, así que se propone OCR.
+
+**Propuesta de OCR, a falta del OK del usuario:**
+
+1. **Cómo:** renderizar cada página con pypdfium2, que ya viene con pdfplumber y abre también Liverpool y Tottenham, y pasarla por OCR. El texto de cada página se guarda con el sha256 del PDF de origen, para que la extracción y los tests no dependan de volver a hacer OCR.
+2. **Motor recomendado:** Apple Vision, a través de `ocrmac` 1.0.1 (licencia MIT, publicado el 08/01/2026) sobre `pyobjc-framework-Vision` 12.2.2. Se instala con uv en `.venv`, sin descargar modelos y sin nada global. En contra: solo funciona en macOS, así que el OCR se hace en el Mac y el CI trabaja con el texto ya guardado.
+3. **Alternativa multiplataforma:** `rapidocr` 3.9.2 (Apache-2.0, basado en ONNX). Pesa más (opencv, onnxruntime) y falta comprobar dónde guarda sus modelos.
+4. **Descartadas:** Tesseract, porque su binario se instala con brew, es decir, de forma global; y easyocr, porque depende de PyTorch.
+5. **Alcance:** los 6 PDFs de 2024/25. A los 4 de imagen se suman Liverpool y Tottenham, que pdfium ve como imagen. Las temporadas anteriores están sin medir.
+6. **Controles:** un piloto con una sola cuenta de resultados antes de ampliar. Después, cada cifra que salga del OCR se revisa contra la imagen de la página, se marca como obtenida por OCR y tiene que cuadrar con sus subtotales (sección 5 del plan).
+7. **Alternativa sin OCR, sin comprobar:** usar el informe anual que algunos clubes publican en su web, si es un PDF digital. Sería otra fuente, con su propio robots.txt.
 
 ## Decisiones
 
@@ -61,15 +89,14 @@ Tomadas en la fase 1 y aceptadas con su OK:
 
 | Pendiente | Para cuándo | Detalle |
 | --- | --- | --- |
-| Clave de la API de Companies House | Antes de la fase 2 | Gratuita, de una aplicación real: la Document API no funciona en el sandbox. Va solo en `.env`. Si no está configurada, el trabajo se para y se pide |
+| OK a la propuesta de OCR | Antes de extraer cifras de los ingleses | Motor (Apple Vision o rapidocr), alcance (los 6 o solo los 4 de imagen) y piloto. Sin OK no se instala nada |
 | URLs de los PDFs de Juventus, Celtic y Lazio | Fase 2 | Sus webs no tienen los enlaces en el HTML. Se fijan a mano en `config/sources.yaml` |
 | Fuentes de FC Porto | Fase 2 | fcporto.pt devolvió 403 a la descarga automática. Alternativa a comprobar: los registros de la CMVM |
-| `data/raw/` en git | Fase 2 | Existe en local, pero git no la guarda hasta que haya `data/raw/manifest.csv` |
 | Hooks fuera del Mac | Si se trabaja desde la VM Linux | El hook apunta al `.venv` del Mac y el binario de gitleaks es de macOS arm64. Desde la VM, `git commit` fallaría |
 
 El resto de comprobaciones de la fase 2 está en la sección 7.1 y en los riesgos de `plan.md`.
 
 ## Siguiente paso
 
-1. Guardar la clave de Companies House en `.env`.
-2. Fase 2: medir la capa de texto de los 6 PDFs ingleses (sección 7.1 del plan).
+1. El usuario decide sobre la propuesta de OCR: motor y alcance.
+2. Con el OK, piloto de OCR sobre una cuenta de resultados, y parar para revisarlo antes de extraer cifras.

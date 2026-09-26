@@ -38,4 +38,6 @@ uv sync --locked              # entorno en .venv con las versiones fijadas
 uv run ruff check .
 uv run pytest
 scripts/install-hooks.sh      # gitleaks en .tools/ y hook de pre-commit
+uv run python -m pitch_to_balance_sheet download      # cuentas de Companies House
+uv run python -m pitch_to_balance_sheet text-layer    # capa de texto de esos PDFs
 ```

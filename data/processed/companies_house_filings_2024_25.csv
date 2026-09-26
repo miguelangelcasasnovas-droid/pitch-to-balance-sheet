@@ -1,0 +1,7 @@
+club_id,company_number,made_up_date,filing_date,filing_type,description,pages,paper_filed,document_id,formats,files
+arsenal,04250459,2025-05-31,2026-02-27,AA,accounts-with-accounts-type-group,45,True,Pgdw9n85ygFC3xHStc-WVjMW-TkPflerHqka_D4zzzc,application/pdf,companies_house/arsenal_04250459_2025-05-31.pdf
+chelsea,02536231,2025-06-30,2026-04-12,AA,accounts-with-accounts-type-group,46,True,tGlrkwhW8Fq-8dP9kA6uqBZPa51ipyqA4fpOFkONTws,application/pdf,companies_house/chelsea_02536231_2025-06-30.pdf
+liverpool,00035668,2025-05-31,2026-03-04,AA,accounts-with-accounts-type-group,38,True,JKZPvs_rlllObRcY0ZELgLQkCBJwZS3LSrqawquw20o,application/pdf,companies_house/liverpool_00035668_2025-05-31.pdf
+manchester_city,00040946,2025-06-30,2026-03-06,AA,accounts-with-accounts-type-full,39,True,WJqzE97ADy9Wln0S8O5NgZc1aNhITsGpm4k-lmj3OYg,application/pdf,companies_house/manchester_city_00040946_2025-06-30.pdf
+tottenham,01706358,2025-06-30,2026-04-09,AA,accounts-with-accounts-type-group,65,True,AF9JxXqgzHYeGYfUSG0UMnNh7_E8X1nCiuondmfa7Uc,application/pdf,companies_house/tottenham_01706358_2025-06-30.pdf
+newcastle,02529667,2025-06-30,2026-04-13,AA,accounts-with-accounts-type-group,47,True,YsXD_RyttJGOxK9S_prG5hiMkH_9eTNqiwFXOcFvIvA,application/pdf,companies_house/newcastle_02529667_2025-06-30.pdf
