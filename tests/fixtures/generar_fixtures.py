@@ -1,8 +1,10 @@
-"""Genera los fixtures de una página de tests/test_text_layer.py.
+"""Genera los fixtures de una página de tests/test_text_layer.py y tests/test_ocr.py.
 
-Son sintéticos: rótulos contables genéricos, sin cifras ni datos de ningún club.
-- pagina_texto.pdf: una página con capa de texto, como un PDF generado por software.
+Son sintéticos, sin datos de ningún club:
+- pagina_texto.pdf: una página con capa de texto y rótulos contables genéricos, sin cifras.
 - pagina_imagen.pdf: la misma página convertida en imagen, como un escaneo, sin capa de texto.
+- pagina_ocr.pdf: una cuenta de resultados inventada, solo imagen, para probar imagen -> OCR ->
+  cifra. Las cifras son inventadas y cuadran: 123,456 - 23,456 = 100,000, etc.
 
 Uso: .venv/bin/python tests/fixtures/generar_fixtures.py
 """
@@ -12,6 +14,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 
 HERE = Path(__file__).parent
+ARIAL = "/System/Library/Fonts/Supplemental/Arial.ttf"
 LINES = [
     "Fixture sintetico para tests: rotulos genericos, sin cifras de ningun club.",
     "Consolidated profit and loss account",
@@ -66,6 +69,49 @@ def image_pdf(lines: list[str], path: Path) -> None:
     image.save(path, "PDF", resolution=72)
 
 
+# Rótulo, nota y cifras 2025 y 2024 de una cuenta de resultados inventada.
+PNL = [
+    ("Turnover", "3", "123,456", "100,000"),
+    ("Cost of sales", "", "(23,456)", "(20,000)"),
+    ("Gross profit", "", "100,000", "80,000"),
+    ("Administrative expenses", "", "(104,321)", "(81,234)"),
+    ("Other operating income", "", "-", "500"),
+    ("Loss for the financial year", "", "(4,321)", "(734)"),
+]
+
+
+def ocr_pdf(path: Path) -> None:
+    """Cuenta de resultados de una página, solo imagen a 150 ppp, con las cifras alineadas a la
+    derecha de sus columnas como en unas cuentas reales.
+
+    Usa Arial de macOS: la fuente por defecto de Pillow no tiene el símbolo £.
+    """
+    image = Image.new("L", (1240, 1754), 255)
+    draw = ImageDraw.Draw(image)
+    font = ImageFont.truetype(ARIAL, 26)
+    draw.text((120, 120), "EJEMPLO FC LIMITED (fixture sintetico, cifras inventadas)", fill=0,
+              font=font)
+    draw.text((120, 170), "PROFIT AND LOSS ACCOUNT", fill=0, font=font)
+    columns = (900, 1120)  # borde derecho de cada columna
+
+    def right(text: str, x: int, y: int) -> None:
+        draw.text((x - draw.textlength(text, font=font), y), text, fill=0, font=font)
+
+    for x, year in zip(columns, ("2025", "2024"), strict=True):
+        right(year, x, 280)
+        right("£'000", x, 320)
+    right("Notes", 640, 320)
+    for row, (label, note, current, previous) in enumerate(PNL):
+        y = 400 + 60 * row
+        draw.text((120, y), label, fill=0, font=font)
+        if note:
+            right(note, 640, y)
+        right(current, columns[0], y)
+        right(previous, columns[1], y)
+    image.save(path, "PDF", resolution=150)
+
+
 if __name__ == "__main__":
     (HERE / "pagina_texto.pdf").write_bytes(text_pdf(LINES))
     image_pdf(LINES, HERE / "pagina_imagen.pdf")
+    ocr_pdf(HERE / "pagina_ocr.pdf")

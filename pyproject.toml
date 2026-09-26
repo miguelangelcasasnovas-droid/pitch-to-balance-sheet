@@ -6,10 +6,13 @@ requires-python = ">=3.11"
 # Versiones fijadas según docs/plan.md, sección 11.
 dependencies = [
     "duckdb==1.5.5",
+    "ocrmac==1.0.1 ; sys_platform == 'darwin'",
     "pandas==3.0.6",
     "pandera==0.33.1",
     "pdfplumber==0.11.10",
+    "pillow==12.3.0",
     "plotly==7.1.0",
+    "pypdfium2==5.13.0",
     "python-dotenv==1.2.3",
     "pyyaml==6.0.3",
     "requests==2.34.2",

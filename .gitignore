@@ -11,6 +11,9 @@
 data/raw/*
 !data/raw/manifest.csv
 
+# OCR y recortes: se regeneran a partir de data/raw/
+data/interim/
+
 # Python
 __pycache__/
 *.py[cod]

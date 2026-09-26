@@ -6,7 +6,14 @@ from datetime import date
 import pytest
 
 from pitch_to_balance_sheet.config import fiscal_year_end_date, load_clubs
-from pitch_to_balance_sheet.manifest import ManifestEntry, sha256_bytes, upsert
+from pitch_to_balance_sheet.manifest import (
+    ManifestEntry,
+    ManifestError,
+    sha256_bytes,
+    upsert,
+    verify,
+)
+from pitch_to_balance_sheet.sources.config import load_sources
 
 
 def entry(file, sha256="0" * 64):
@@ -42,6 +49,43 @@ def test_temporada_es_el_ano_fiscal_que_cierra_en_ella(season, fiscal_year_end, 
 def test_temporada_mal_escrita_es_error(season):
     with pytest.raises(ValueError, match="Temporada no válida"):
         fiscal_year_end_date(season, "06-30")
+
+
+def test_verify_falla_si_falta_no_esta_registrado_o_ha_cambiado(tmp_path):
+    manifest_path = tmp_path / "manifest.csv"
+    with pytest.raises(ManifestError, match="falta data/raw/manual/x.pdf"):
+        verify(tmp_path, "manual/x.pdf", manifest_path)
+    (tmp_path / "manual").mkdir()
+    (tmp_path / "manual" / "x.pdf").write_bytes(b"%PDF-1.4 uno")
+    with pytest.raises(ManifestError, match="no está registrado"):
+        verify(tmp_path, "manual/x.pdf", manifest_path)
+    upsert(manifest_path, [entry("manual/x.pdf", sha256=sha256_bytes(b"%PDF-1.4 uno"))])
+    assert verify(tmp_path, "manual/x.pdf", manifest_path)["file"] == "manual/x.pdf"
+    (tmp_path / "manual" / "x.pdf").write_bytes(b"%PDF-1.4 dos")
+    with pytest.raises(ManifestError, match="ha cambiado"):
+        verify(tmp_path, "manual/x.pdf", manifest_path)
+
+
+def test_sources_yaml_recoge_las_decisiones_del_26_09_2026():
+    sources = load_sources("2024/25")
+    city = sources["manchester_city"]
+    assert (city.primary.kind, city.primary.file) == ("manual", "manual/mancity_2024-25.pdf")
+    assert city.primary.url.endswith("mcfc_financial_report_2025_.pdf")
+    assert [c.kind for c in city.controls] == ["companies_house"]
+    assert sources["liverpool"].primary.kind == "url"
+    for club_id in ("arsenal", "chelsea", "tottenham", "newcastle"):
+        assert sources[club_id].primary.kind == "companies_house"
+    assert sources["chelsea"].primary.pages == {"income_statement": 17, "staff_costs_note": 34}
+    assert {"juventus", "celtic"} <= set(sources)
+    assert not {"lazio", "porto"} & set(sources)  # pendientes
+
+
+def test_fuente_manual_sin_archivo_es_error(tmp_path):
+    path = tmp_path / "sources.yaml"
+    path.write_text('"2024/25":\n  x:\n    primary: {kind: manual, url: "https://e.jemplo/x.pdf"}\n',
+                    encoding="utf-8")
+    with pytest.raises(ValueError, match="necesita file"):
+        load_sources("2024/25", path)
 
 
 def test_clubs_yaml_tiene_los_seis_ingleses():

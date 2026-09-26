@@ -10,6 +10,7 @@ import yaml
 ROOT = Path(__file__).resolve().parents[2]
 CONFIG_DIR = ROOT / "config"
 RAW_DIR = ROOT / "data" / "raw"
+INTERIM_DIR = ROOT / "data" / "interim"  # fuera de git: OCR y recortes
 PROCESSED_DIR = ROOT / "data" / "processed"
 
 

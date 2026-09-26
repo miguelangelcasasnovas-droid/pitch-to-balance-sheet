@@ -42,6 +42,19 @@ def test_clasificacion_en_los_limites(chars_per_page, expected):
     assert classify(chars_per_page) == expected
 
 
+def test_si_pdfplumber_no_puede_abrirlo_se_abre_con_pypdfium2(monkeypatch):
+    from pitch_to_balance_sheet.extract import text_layer
+
+    def falla(path):
+        raise RuntimeError("PSEOF('Unexpected EOF')")
+
+    monkeypatch.setattr(text_layer, "_page_texts_pdfplumber", falla)
+    layer = measure(FIXTURES / "pagina_texto.pdf")
+    assert layer.engine == "pypdfium2"
+    assert layer.classification == "texto"
+    assert layer.keywords_found("personal") == ("staff costs", "wages")
+
+
 def test_pdf_sin_paginas_es_error():
     with pytest.raises(ValueError, match="no tiene páginas"):
         classify([])

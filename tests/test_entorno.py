@@ -7,6 +7,7 @@ import tomllib
 from pathlib import Path
 
 import pytest
+from packaging.requirements import Requirement
 
 PYPROJECT = Path(__file__).resolve().parents[1] / "pyproject.toml"
 
@@ -18,9 +19,13 @@ def test_python_311_o_superior():
 def test_dependencias_con_la_version_fijada():
     config = tomllib.loads(PYPROJECT.read_text(encoding="utf-8"))
     requisitos = config["project"]["dependencies"] + config["dependency-groups"]["dev"]
-    for requisito in requisitos:
-        nombre, version = requisito.split("==")
-        assert importlib.metadata.version(nombre) == version, nombre
+    for texto in requisitos:
+        requisito = Requirement(texto)
+        if requisito.marker and not requisito.marker.evaluate():
+            continue  # p. ej. ocrmac, que solo se instala en macOS
+        [especificador] = requisito.specifier
+        assert especificador.operator == "==", texto
+        assert importlib.metadata.version(requisito.name) == especificador.version, texto
 
 
 def test_paquete_importable():
