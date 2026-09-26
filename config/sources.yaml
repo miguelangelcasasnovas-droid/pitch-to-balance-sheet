@@ -4,11 +4,12 @@
 # primary: de ahí salen las cifras. controls: sirven para contrastarlas.
 # kind:
 #   companies_house: cuentas depositadas, por la API (python -m pitch_to_balance_sheet download).
-#   url: PDF de la web del club; su robots.txt permite la descarga automática.
+#   url: PDF de la web del club; su robots.txt permite la descarga automática
+#        (python -m pitch_to_balance_sheet download-web). Se guarda en data/raw/<file>.
 #   manual: PDF descargado a mano a data/raw/<file>. Se registra en data/raw/manifest.csv
 #           (python -m pitch_to_balance_sheet register-manual) y el pipeline comprueba su sha256:
 #           si falta el archivo o ha cambiado, sale con error.
-# pages: páginas del PDF (desde 1) localizadas a mano mirando la página renderizada.
+# Las páginas de cada cifra están en el extractor de cada club (src/pitch_to_balance_sheet/extract/clubs/).
 #
 # Lazio y FC Porto: pendientes (docs/estado.md), sin fuente fijada.
 "2024/25":
@@ -20,13 +21,11 @@
   chelsea:
     primary:
       kind: companies_house
-      pages:
-        income_statement: 17  # Group profit and loss account (pág. 14 impresa)
-        staff_costs_note: 34  # Nota 8, Employees: remuneración agregada (pág. 31 impresa)
   liverpool:
     primary:
       kind: url
       url: https://backend.liverpoolfc.com/sites/default/files/2026-03/2025_Accounts_0b9cd179492e0f16a4de8edfc027212f.pdf
+      file: web/liverpool_2024-25.pdf
       note: Sin capa de texto, pero es un render limpio, no un escaneo. Necesita OCR.
     controls:
       - kind: companies_house
@@ -48,12 +47,15 @@
     primary:
       kind: url
       url: https://www.juventus.com/images/image/private/fl_attachment/dev/e0wkkhbyscbvklpjx5kg.pdf
+      file: web/juventus_2024-25_it.pdf
       note: Relazione Finanziaria Annuale al 30 giugno 2025, en italiano, la versión que prevalece.
     controls:
       - kind: url
         url: https://www.juventus.com/images/image/private/fl_attachment/dev/kxj334yxgnpmidayi3wp.pdf
+        file: web/juventus_2024-25_en.pdf
         note: Traducción al inglés. Su portada avisa de que prevalece la italiana.
   celtic:
     primary:
       kind: url
       url: https://cdn.celticfc.com/assets/Celtic_plc_Annual_Report_2025.pdf
+      file: web/celtic_2024-25.pdf

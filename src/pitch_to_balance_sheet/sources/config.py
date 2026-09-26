@@ -1,6 +1,6 @@
 """config/sources.yaml: de qué documento sale cada club en cada temporada."""
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 import yaml
@@ -14,9 +14,8 @@ KINDS = ("companies_house", "url", "manual")
 class Source:
     kind: str
     url: str | None = None
-    file: str | None = None  # ruta relativa a data/raw/, solo en las manuales
+    file: str | None = None  # ruta relativa a data/raw/, en las manuales y las de la web
     note: str | None = None
-    pages: dict[str, int] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -36,8 +35,8 @@ def _source(club_id: str, data: dict) -> Source:
         raise ValueError(f"{club_id}: tipo de fuente desconocido {source.kind!r}")
     if source.kind in ("url", "manual") and not source.url:
         raise ValueError(f"{club_id}: la fuente {source.kind} necesita url")
-    if source.kind == "manual" and not source.file:
-        raise ValueError(f"{club_id}: la fuente manual necesita file")
+    if source.kind in ("url", "manual") and not source.file:
+        raise ValueError(f"{club_id}: la fuente {source.kind} necesita file")
     return source
 
 

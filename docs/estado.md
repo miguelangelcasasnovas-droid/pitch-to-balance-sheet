@@ -1,6 +1,6 @@
 # Estado del proyecto
 
-Actualizado: 26/09/2026
+Actualizado: 26/09/2026 (fase 2c)
 
 ## Fase 0: cerrada
 
@@ -94,9 +94,9 @@ Hecha en Cowork. El detalle, con URLs, páginas, robots.txt y sha256, está en [
 - Liverpool sigue necesitando OCR, pero el PDF de su web es un render limpio y es mejor base que el escaneo de Companies House.
 - Lazio también es imagen. Antes de pasar sus 208 páginas por OCR, conviene buscar el ESEF.
 
-## Fase 2b: fuentes fijadas y piloto de OCR con Chelsea (hecha, a falta del OK)
+## Fase 2b: fuentes fijadas y piloto de OCR con Chelsea (cerrada)
 
-Hecha el 26/09/2026. Solo se han extraído las tres cifras del piloto.
+Hecha el 26/09/2026 y cerrada ese mismo día con el OK del usuario, que comprobó los tres recortes contra la imagen y el CI de `517977c` en verde. En la fase 2c cambiaron algunas piezas del piloto: las páginas pasaron de `config/sources.yaml` al extractor de cada club, y la comprobación de "al menos un £ por página" se sustituyó por la decisión 18.
 
 **Fuentes 2024/25, decididas por el usuario el 26/09/2026** y fijadas en `config/sources.yaml`:
 
@@ -148,6 +148,46 @@ Hecha el 26/09/2026. Solo se han extraído las tres cifras del piloto.
 6. **Rareza del propio documento:** en la pág. 17, la fila que va antes del impuesto se llama "(Loss)/profit after taxation". El extractor la trata como resultado antes de impuestos, y así cuadra.
 7. **Test:** `tests/fixtures/pagina_ocr.pdf` es una página inventada, solo imagen, con una cuenta de resultados que cuadra, un guion y paréntesis. `test_imagen_ocr_cifra` cubre imagen → OCR → cifra → cuadre. Usa Apple Vision, así que solo corre en macOS; en el CI, que es Linux, se salta. El resto de tests de OCR no hacen OCR y corren en todas partes.
 
+## Fase 2c: ingresos, gastos de personal y resultado neto 2024/25 (hecha, a falta del OK)
+
+Hecha el 26/09/2026 para 8 clubes. Lazio y FC Porto siguen pendientes. No se ha convertido nada a EUR ni se ha extraído ningún otro concepto.
+
+**Resultado** (`python -m pitch_to_balance_sheet extract --season 2024/25`, exit 0), en miles de la moneda de cada club:
+
+| Club | Fuente | Ingresos | Gastos de personal | Resultado neto | Moneda | Unidad | Páginas (ingresos · personal · resultado) | Cuadres | Notas de OCR |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Arsenal | Companies House (OCR) | 690,998 | 346,804 | (1,377) | GBP | miles | 23 · 34 · 23 | OK, 40/40 | 5 cabeceras £ mal leídas; 5 guiones→cero detectados en la imagen |
+| Chelsea | Companies House (OCR) | 490,857 | 359,265 | (262,647) | GBP | miles | 17 · 34 · 17 | OK, 35/35 | 7 cabeceras £ mal leídas; 11 guiones→cero; 1 segunda lectura |
+| Liverpool | Web del club (OCR); control: Companies House | 702,722 | 427,727 | 8,273 | GBP | miles | 14 · 27 · 14 | OK, 27/27 | 2 cabeceras £ mal leídas; 12 segundas lecturas; 1 guion→cero |
+| Manchester City | PDF manual (texto) | 694,094 | 408,403 | (9,916) | GBP | miles | 20 · 37 · 20 | OK, 29/29 | 1 cifra partida por un espacio ("359, 170") |
+| Tottenham Hotspur | Companies House (OCR) | 564,881 | 255,811 | (94,666) | GBP | miles | 23 · 35 · 23 | OK, 30/30 | 6 cabeceras £ mal leídas; 6 guiones→cero |
+| Newcastle United | Companies House (OCR) | 335,322 | 243,477 | 34,728 | GBP | miles | 19 · 36 · 19 | OK, 12/12 | 1 punto en lugar de coma; 2 guiones→cero |
+| Celtic | Web del club (texto) | 143,597 | 74,763 | 33,934 | GBP | miles | 26 · 33 · 26 | OK, 10/10 | Sin correcciones |
+| Juventus | Web del club, italiano (texto); control: inglés | 529,630 | 244,666 | (58,146) | EUR | miles | 149 · 175 · 149 | OK, 39/39 | Sin correcciones |
+
+- **Filas de cada cifra:**
+  - Arsenal: "Group turnover", total sin rótulo de "Staff costs" y "(Loss) for the financial year".
+  - Chelsea: "Turnover", total de la nota 8 y "(Loss)/profit for the financial year".
+  - Liverpool: "Turnover", total de la nota 4 y "Profit/(loss) for the financial year".
+  - Man City: "Revenue", "Total" de la nota 7 y "(Loss)/profit on ordinary activities after taxation".
+  - Tottenham: "Revenue", total de la nota 5 y "Loss for the year".
+  - Newcastle: "Turnover", total de la nota 7 y "Profit/(loss) and total comprehensive income for the year".
+  - Celtic: "Revenue", total del grupo en la nota 9 y "Profit and total comprehensive profit for the year".
+  - Juventus: "Totale ricavi e proventi", "Personale tesserato" + "Altro personale" (totales de las notas 40 y 41) y "Risultato dell'esercizio".
+- **Controles:** Liverpool en Companies House y Juventus en inglés dan las mismas tres cifras que la fuente principal.
+- **Cuadres:** 222, todos con diferencia 0 (tolerancia ±1). Cubren los subtotales de cada cuenta de resultados en todas sus columnas, operaciones + traspasos = total fila a fila (Arsenal, Chelsea, Tottenham y Man City), el total de cada nota de personal y, en Juventus, que cada nota coincida con su línea de la cuenta. El detalle está en `data/interim/cuadres_2024_25.csv`.
+- **Cifras:** en `data/interim/cifras_2024_25.csv`, una fila por cifra con página, rótulo, columna, sha256, `ocr_note` y ruta del recorte.
+- **Recortes:** 24 en `data/interim/recortes/<club>_2024_25_<concepto>_p<página>.png`, revisados uno a uno contra la imagen. En el de Juventus (personal) van apiladas las dos filas que se suman.
+- **Las 24 cifras** se leyeron sin corrección (`ocr_note` "sin corrección"). Todas las correcciones están en otras celdas de las tablas, y todas quedan respaldadas por cuadres.
+- **Errores que salieron por el camino,** todos parados con error y no forzados:
+  - El OCR de la página entera de Arsenal perdía casi todas las cifras (decisión 17).
+  - En Newcastle, la segunda lectura de un guion leyó la fila de abajo; el cuadre lo detectó (decisión 21).
+  - En Liverpool, en Companies House, apareció "(88;608)" con punto y coma; ahora se corrige y se anota.
+  - En Juventus en inglés, una nota al pie con cifras entraba en la tabla; ahora solo se completan las celdas de las filas usadas.
+- **Descargas web** (`python -m pitch_to_balance_sheet download-web`): Liverpool, Juventus en italiano y en inglés, y Celtic. Sus sha256 coinciden con los de `fuentes-pendientes.md`: los archivos no han cambiado en el servidor.
+- **Capa de texto de los PDFs de la web** (`text-layer`): Juventus 256 de 259 (italiano) y 255 de 258 (inglés); Celtic 39 de 43; Liverpool 0 de 38, imagen.
+- **Tests:** 72, entre ellos `tests/test_statements.py`, sobre un fixture sintético con capa de texto (`tabla_texto.pdf`), que corre en el CI. El de imagen → OCR → cifra pasa por el motor completo y solo corre en macOS.
+
 ## Decisiones
 
 1. **Carpeta de trabajo:** `~/football-club-finance`.
@@ -169,20 +209,34 @@ Tomadas por el usuario el 26/09/2026:
 11. **OCR con Apple Vision** (`ocrmac==1.0.1`, solo en macOS, instalado con uv en `.venv`). rapidocr queda de reserva, sin instalar.
 12. **pypdfium2 para lo que pdfplumber no puede abrir**, anotado en el criterio de la fase 2a.
 
-Tomadas en la fase 2b, a falta del OK del usuario:
+Tomadas en la fase 2b y aceptadas con el OK del usuario del 26/09/2026:
 
-13. **Celdas que el OCR deja vacías:** se mira la imagen de la celda. Sin tinta, queda vacía; un trazo corto es un guion, es decir, cero; cualquier otra cosa pasa a una segunda pasada de OCR solo sobre la celda, y si tampoco se lee, error. Cada cifra corregida así queda anotada.
-14. **La moneda no sale del OCR,** que confunde £ con € y con f. La fija el extractor de cada club.
+13. **Celdas que el OCR deja vacías:** se mira la imagen de la celda. Sin tinta, queda vacía; un trazo corto es un guion, es decir, cero; cualquier otra cosa pasa a una segunda pasada de OCR solo sobre la celda, y si tampoco se lee, error. **Con la condición del usuario:** un guion leído como cero solo vale si al menos un cuadre en el que interviene cuadra; si no, error. Una celda sin tinta nunca se lee como cero. Cada cifra lleva una columna `ocr_note` que dice si hubo corrección, segunda lectura o guion→cero.
+14. **La moneda no sale del OCR,** que confunde £ con €, f, $, 2, 6 o ·. La fija el extractor de cada club.
 15. **Fecha de descarga de un PDF manual:** la de modificación del archivo.
 16. **`pypdfium2==5.13.0` y `pillow==12.3.0` fijadas en `pyproject.toml`,** con la versión que ya tenía `uv.lock`, porque el código las importa directamente.
+
+También aceptados con ese OK: el PDF manual de Man City es la variante enlazada; Juventus con el italiano como fuente y el inglés como control; `en-US` en Vision; y ocrmac y pyobjc solo en macOS.
+
+Tomadas en la fase 2c, a falta del OK del usuario:
+
+17. **OCR sobre la región de la tabla** cuando el de la página entera pierde cifras o rótulos: Arsenal pág. 23 (de 16 cifras leídas se pasa a todas) y Newcastle pág. 19. El OCR de cada región se guarda aparte, en coordenadas de la página.
+18. **La unidad se comprueba en cada página; la moneda no.** Se exige una cabecera con forma de miles ("'000", "£000" y sus lecturas del OCR). La moneda la fija el extractor según la página renderizada, y su justificación va en `unit_basis`. Sustituye a "al menos un £ por página", que el OCR no cumple en Arsenal ni en Newcastle.
+19. **Columnas desde la fila de años** donde el OCR no lee las cabeceras £: Tottenham pág. 35 y Newcastle págs. 19 y 36.
+20. **Newcastle: filas por orden.** Su escaneo en Garamond da rótulos ilegibles, y además inestables: un píxel de diferencia en el recorte cambia el texto. Las 14 filas con cifras se identifican por su orden, con la primera y la última como anclas; los cuadres comprueban que cada cifra está en su fila.
+21. **La banda de cada celda no llega a la mitad de la distancia a la fila vecina.** Antes, en Newcastle, la segunda lectura de un guion devolvió el "113" de la fila de abajo, y el cuadre lo detectó (1,213 frente a 1,326).
+22. **Rótulos por OCR con paréntesis opcionales** donde el OCR los pierde ("Profit/loss) from operations"), y rótulos de Newcastle tolerantes a sus confusiones de letras.
+23. **Juventus:** "ingresos" = "Totale ricavi e proventi" publicado, que incluye 109.725 de "Proventi da gestione diritti calciatori". Queda marcado y pendiente de decisión (ver pendientes). "Gastos de personal" = suma de los totales de las notas 40 y 41, porque la cuenta de resultados no tiene una línea de total; cada nota tiene que coincidir con su línea de la cuenta.
+24. **Arsenal:** "ingresos" = "Group turnover" total, que incluye 454 de "player trading" (según el propio PDF, sobre todo cesiones). **Man City:** "gastos de personal" = total de la nota 7, que incluye 531 de pagos basados en acciones.
+25. **Juventus y Celtic en `config/clubs.yaml`,** con su cierre a 30/06 (plan, sección 6). `download` solo baja de Companies House los clubes que lo tienen como fuente en `sources.yaml`.
 
 ## Pendientes
 
 | Pendiente | Para cuándo | Detalle |
 | --- | --- | --- |
-| OK al piloto de Chelsea | Antes de ampliar el OCR | Cifras, cuadres, recortes y el tratamiento de las celdas vacías (decisión 13) |
-| Descargar los PDFs de la web de Liverpool, Juventus y Celtic | Fase 2 | Las URLs están en `config/sources.yaml`. `text-layer` los marca como "sin medir" hasta que se descarguen |
-| Página de la cuenta de resultados de Man City | Antes de extraer sus cifras | El PDF manual tiene texto, pero la página no se ha localizado |
+| OK a la fase 2c | Antes de seguir | Las cifras de la tabla y las decisiones 17 a 25 |
+| Ingresos de Juventus: ¿con o sin "Proventi da gestione diritti calciatori"? | Antes de las métricas | Según la sección 9 del plan, los ingresos excluyen la venta de jugadores. El total publicado (529.630) la incluye (109.725). Restarla es un cálculo, no una cifra publicada: decide el usuario |
+| Estabilidad del OCR | Al repetir un OCR | Vision puede leer distinto con un píxel de diferencia (Newcastle). El OCR queda guardado en `data/interim/ocr/`; si se repite, los rótulos pueden cambiar, y las cifras las siguen validando los cuadres |
 | PDF manual de Arsenal | Opcional | Si el usuario lo deja en `data/raw/manual/arsenal_2024-25.pdf`, pasa a ser la fuente principal. Hay que añadirlo a `sources.yaml` con su URL y registrarlo |
 | ESEF de Lazio 2024/25 | Antes de decidir OCR para Lazio | El club dice que está en el portal 1info, pero la dirección que da devuelve 404 |
 | Informe anual 2024/25 completo de FC Porto | Fase 2 | La CMVM vuelve después del 27/09/2026 a las 18:00. Mientras tanto solo hay el comunicado de resultados, que no trae notas. fcporto.pt respondió 200 el 26/09/2026, pero no tiene enlaces en el HTML |
@@ -192,6 +246,6 @@ El resto de comprobaciones de la fase 2 está en la sección 7.1 y en los riesgo
 
 ## Siguiente paso
 
-1. El usuario revisa el piloto de Chelsea: las tres cifras, los cuadres, los recortes y los errores de OCR.
-2. Con el OK: descargar los PDFs de la web (Liverpool, Juventus y Celtic) y extender el OCR, página a página, a Arsenal, Liverpool, Tottenham y Newcastle.
+1. El usuario revisa la tabla de la fase 2c y las decisiones 17 a 25, y decide sobre los ingresos de Juventus.
+2. Con el OK: los cotizados que faltan (Manchester United, Dortmund, Ajax y Benfica) y, cuando haya fuente, Lazio y FC Porto.
 3. Después del 27/09/2026 a las 18:00, volver a la CMVM para buscar el informe anual 2024/25 de FC Porto.

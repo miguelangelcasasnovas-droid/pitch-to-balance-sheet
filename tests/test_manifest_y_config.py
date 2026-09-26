@@ -72,25 +72,33 @@ def test_sources_yaml_recoge_las_decisiones_del_26_09_2026():
     assert (city.primary.kind, city.primary.file) == ("manual", "manual/mancity_2024-25.pdf")
     assert city.primary.url.endswith("mcfc_financial_report_2025_.pdf")
     assert [c.kind for c in city.controls] == ["companies_house"]
-    assert sources["liverpool"].primary.kind == "url"
+    liverpool = sources["liverpool"]
+    assert (liverpool.primary.kind, liverpool.primary.file) == ("url", "web/liverpool_2024-25.pdf")
+    assert [c.kind for c in liverpool.controls] == ["companies_house"]
     for club_id in ("arsenal", "chelsea", "tottenham", "newcastle"):
         assert sources[club_id].primary.kind == "companies_house"
-    assert sources["chelsea"].primary.pages == {"income_statement": 17, "staff_costs_note": 34}
-    assert {"juventus", "celtic"} <= set(sources)
+    juventus = sources["juventus"]
+    assert juventus.primary.file == "web/juventus_2024-25_it.pdf"
+    assert [c.file for c in juventus.controls] == ["web/juventus_2024-25_en.pdf"]
+    assert sources["celtic"].primary.file == "web/celtic_2024-25.pdf"
     assert not {"lazio", "porto"} & set(sources)  # pendientes
 
 
-def test_fuente_manual_sin_archivo_es_error(tmp_path):
+@pytest.mark.parametrize("kind", ["manual", "url"])
+def test_fuente_manual_o_web_sin_archivo_es_error(tmp_path, kind):
     path = tmp_path / "sources.yaml"
-    path.write_text('"2024/25":\n  x:\n    primary: {kind: manual, url: "https://e.jemplo/x.pdf"}\n',
+    path.write_text(f'"2024/25":\n  x:\n    primary: {{kind: {kind}, url: "https://e.jemplo/x.pdf"}}\n',
                     encoding="utf-8")
     with pytest.raises(ValueError, match="necesita file"):
         load_sources("2024/25", path)
 
 
-def test_clubs_yaml_tiene_los_seis_ingleses():
+def test_clubs_yaml_tiene_los_seis_ingleses_juventus_y_celtic():
     clubs = load_clubs()
     assert [club.club_id for club in clubs] == [
         "arsenal", "chelsea", "liverpool", "manchester_city", "tottenham", "newcastle",
+        "juventus", "celtic",
     ]
-    assert all(len(club.companies_house_number) == 8 for club in clubs)
+    english = [club for club in clubs if club.club_id not in ("juventus", "celtic")]
+    assert all(len(club.companies_house_number) == 8 for club in english)
+    assert all(club.fiscal_year_end in ("05-31", "06-30") for club in clubs)

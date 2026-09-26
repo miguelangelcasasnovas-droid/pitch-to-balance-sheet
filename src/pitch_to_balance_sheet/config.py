@@ -19,7 +19,7 @@ class Club:
     club_id: str
     name: str
     entity: str
-    companies_house_number: str
+    companies_house_number: str | None
     fiscal_year_end: str  # MM-DD
 
 

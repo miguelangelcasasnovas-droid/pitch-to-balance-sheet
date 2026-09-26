@@ -39,8 +39,9 @@ uv run ruff check .
 uv run pytest
 scripts/install-hooks.sh      # gitleaks en .tools/ y hook de pre-commit
 uv run python -m pitch_to_balance_sheet download          # cuentas de Companies House
+uv run python -m pitch_to_balance_sheet download-web      # PDFs de la web de los clubes
 uv run python -m pitch_to_balance_sheet register-manual   # PDFs manuales al manifiesto
 uv run python -m pitch_to_balance_sheet text-layer        # capa de texto de los PDFs locales
-uv run python -m pitch_to_balance_sheet ocr --club X      # OCR de las páginas localizadas (macOS)
-uv run python -m pitch_to_balance_sheet extract --club X  # cifras, cuadres y recortes
+uv run python -m pitch_to_balance_sheet ocr --club X      # rehace el OCR de un club (macOS)
+uv run python -m pitch_to_balance_sheet extract [--club X]  # cifras, cuadres y recortes
 ```

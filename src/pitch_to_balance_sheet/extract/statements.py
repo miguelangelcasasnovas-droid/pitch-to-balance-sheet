@@ -1,0 +1,369 @@
+"""Motor de extracción: cifras por club con su página, fila, cuadres y recorte.
+
+Cada club tiene su especificación en extract/clubs/<club>.py: páginas localizadas a mano mirando
+la página, filas de cada tabla, relaciones de suma que tienen que cuadrar, y moneda y unidad
+fijadas por el extractor.
+
+Reglas:
+- Un cuadre que no cuadra es un error. No se fuerza nada.
+- Un guion leído como cero solo vale si al menos un cuadre en el que interviene cuadra.
+- Una celda vacía no es cero: si un cuadre o una cifra la necesita, es un error.
+- Un control (otro documento del mismo club) tiene que dar las mismas cifras.
+"""
+
+import re
+from dataclasses import dataclass, field
+from pathlib import Path
+
+from PIL import Image
+
+from pitch_to_balance_sheet.extract import ocr, pdf_text
+from pitch_to_balance_sheet.extract.tables import (
+    UNIT_HEADER,
+    Amount,
+    Table,
+    TableError,
+    TableRow,
+    group_rows,
+    in_region,
+    read_tables,
+)
+
+TOLERANCE = 1  # en la unidad del documento, por redondeo
+
+
+class ExtractionError(RuntimeError):
+    """Falta una fila o una celda, un cuadre no cuadra o un control no coincide."""
+
+
+@dataclass(frozen=True)
+class Sum:
+    """total = suma de las partes, en las columnas indicadas (todas si no se indican)."""
+
+    total: str
+    parts: tuple[str, ...]
+    columns: tuple[str, ...] | None = None
+
+
+@dataclass(frozen=True)
+class Cross:
+    """Fila a fila: la columna total es la suma de las columnas parte."""
+
+    total: str
+    parts: tuple[str, ...]
+    rows: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class Link:
+    """La misma cifra en dos tablas, p. ej. el total de una nota y su línea en la cuenta.
+
+    sign = -1 cuando una la da en positivo y la otra en negativo (un gasto en la nota y en la
+    cuenta de resultados).
+    """
+
+    a: tuple[str, str, str]  # tabla, fila, columna
+    b: tuple[str, str, str]
+    sign: int = 1
+
+
+@dataclass(frozen=True)
+class TableSpec:
+    name: str
+    page: int
+    columns: tuple[str, ...]
+    rows: dict[str, str]  # clave -> patrón del rótulo normalizado
+    totals_after: dict[str, str] = field(default_factory=dict)  # total sin rótulo -> fila previa
+    sums: tuple[Sum, ...] = ()
+    cross: tuple[Cross, ...] = ()
+    # Si el OCR no lee bien los rótulos: claves de las filas con cifras, en su orden. Tiene que
+    # haber exactamente esas filas, y los rótulos de anchors tienen que coincidir.
+    rows_by_order: tuple[str, ...] = ()
+    anchors: dict[str, str] = field(default_factory=dict)
+    select: str | None = None  # patrón de una fila que identifica la tabla en la página
+    header_label: str | None = None  # patrón del resto de la fila de cabecera (p. ej. ^group$)
+    region: tuple[float, float, float, float] = (0.0, 0.0, 1.0, 1.0)
+    header: str = UNIT_HEADER
+
+
+@dataclass(frozen=True)
+class FigureSpec:
+    concept: str
+    parts: tuple[tuple[str, str], ...]  # (tabla, fila): una, o varias que se suman
+    column: str
+    note: str = ""  # observación sobre la definición
+
+
+@dataclass(frozen=True)
+class DocumentSpec:
+    method: str  # "ocr" o "text"
+    tables: tuple[TableSpec, ...]
+    figures: tuple[FigureSpec, ...]
+    unit_evidence: str  # tiene que aparecer en el texto de cada página usada
+    thousands: str = ","
+    links: tuple[Link, ...] = ()
+    control_index: int | None = None  # None: fuente principal; n: controls[n] de sources.yaml
+
+
+@dataclass(frozen=True)
+class ClubSpec:
+    club_id: str
+    currency: str
+    unit: str
+    multiplier: int
+    unit_basis: str  # de dónde salen la moneda y la unidad
+    primary: DocumentSpec
+    controls: tuple[DocumentSpec, ...] = ()
+
+
+@dataclass(frozen=True)
+class Check:
+    document: str
+    page: int
+    relation: str
+    column: str
+    reported: int
+    computed: int
+    cells: tuple[tuple[str, str, str], ...] = ()
+
+    @property
+    def difference(self) -> int:
+        return self.reported - self.computed
+
+    @property
+    def ok(self) -> bool:
+        return abs(self.difference) <= TOLERANCE
+
+
+@dataclass(frozen=True)
+class Figure:
+    concept: str
+    page: int
+    label: str
+    column: str
+    value: int
+    amounts: tuple[Amount, ...]
+    rows: tuple  # filas de la imagen, para el recorte
+    image_path: Path
+    method: str
+    note: str
+
+    @property
+    def ocr_note(self) -> str:
+        return ocr_note(self.amounts, self.method)
+
+
+@dataclass
+class DocumentResult:
+    name: str
+    figures: list[Figure]
+    checks: list[Check]
+    corrections: list[str]
+    summary: dict[str, int]  # recuento de correcciones por tipo, para las notas de OCR
+
+
+@dataclass
+class LoadedTable:
+    spec: TableSpec
+    table: Table
+    rows: dict[str, TableRow]
+    image_path: Path
+
+
+def ocr_note(amounts: tuple[Amount, ...], method: str) -> str:
+    notes = []
+    for amount in amounts:
+        if amount.second_pass:
+            notes.append("segunda lectura de la celda")
+        elif amount.dash:
+            notes.append("guion→cero" + (" (detectado en la imagen)" if amount.fixes else ""))
+        elif amount.fixes:
+            notes.append("corrección: " + "; ".join(amount.fixes))
+    prefix = "OCR" if method == "ocr" else "texto del PDF, sin OCR"
+    return f"{prefix}: " + (", ".join(dict.fromkeys(notes)) if notes else "sin corrección")
+
+
+def find_rows(table: Table, patterns: dict[str, str], page: int) -> dict[str, TableRow]:
+    found = {}
+    for key, pattern in patterns.items():
+        matches = [r for r in table.rows if re.search(pattern, r.label)]
+        if len(matches) != 1:
+            raise ExtractionError(
+                f"pág. {page}: la fila {key} ({pattern}) aparece {len(matches)} veces"
+            )
+        if matches[0].conflict:
+            raise ExtractionError(f"pág. {page}: fila {key}: {matches[0].conflict}")
+        found[key] = matches[0]
+    return found
+
+
+def rows_by_order(table: Table, keys: tuple[str, ...], anchors: dict[str, str],
+                  page: int) -> dict[str, TableRow]:
+    """Asigna las claves, en orden, a las filas de la tabla que tienen cifras."""
+    numeric = [row for row in table.rows if row.amounts or row.conflict]
+    if len(numeric) != len(keys):
+        raise ExtractionError(f"pág. {page}: se esperaban {len(keys)} filas con cifras y hay "
+                              f"{len(numeric)}")
+    found = dict(zip(keys, numeric, strict=True))
+    for key, row in found.items():
+        if row.conflict:
+            raise ExtractionError(f"pág. {page}: fila {key}: {row.conflict}")
+    for key, pattern in anchors.items():
+        if not re.search(pattern, found[key].label):
+            raise ExtractionError(f"pág. {page}: la fila {key} dice {found[key].raw_label!r}, "
+                                  f"que no casa con {pattern}")
+    return found
+
+
+def total_after(table: Table, last: TableRow, page: int) -> TableRow:
+    """La fila de total sin rótulo que va justo después de la última partida."""
+    index = table.rows.index(last) + 1
+    if index >= len(table.rows) or table.rows[index].label or not table.rows[index].amounts:
+        raise ExtractionError(f"pág. {page}: no hay fila de total después de {last.raw_label!r}")
+    return table.rows[index]
+
+
+def _amount(loaded: dict[str, LoadedTable], cell: tuple[str, str, str]) -> Amount:
+    table_name, row_key, column = cell
+    item = loaded[table_name]
+    index = item.spec.columns.index(column)
+    amount = item.rows[row_key].amounts.get(index)
+    if amount is None:
+        raise ExtractionError(
+            f"pág. {item.spec.page}: la fila {row_key} no tiene importe en la columna {column}"
+        )
+    return amount
+
+
+def _checks(document: str, loaded: dict[str, LoadedTable], links: tuple[Link, ...]):
+    checks = []
+    for name, item in loaded.items():
+        page = item.spec.page
+        for rule in item.spec.sums:
+            for column in rule.columns or item.spec.columns:
+                cells = tuple((name, key, column) for key in (rule.total, *rule.parts))
+                checks.append(Check(
+                    document, page, f"{rule.total} = " + " + ".join(rule.parts), column,
+                    _amount(loaded, cells[0]).value,
+                    sum(_amount(loaded, cell).value for cell in cells[1:]), cells))
+        for rule in item.spec.cross:
+            for key in rule.rows:
+                cells = tuple((name, key, column) for column in (rule.total, *rule.parts))
+                checks.append(Check(
+                    document, page, f"{key}: {rule.total} = " + " + ".join(rule.parts),
+                    rule.total, _amount(loaded, cells[0]).value,
+                    sum(_amount(loaded, cell).value for cell in cells[1:]), cells))
+    for link in links:
+        checks.append(Check(
+            document, loaded[link.a[0]].spec.page,
+            f"{'.'.join(link.a)} = {'-' if link.sign < 0 else ''}{'.'.join(link.b)}",
+            link.a[2], _amount(loaded, link.a).value, link.sign * _amount(loaded, link.b).value,
+            (link.a, link.b)))
+    return checks
+
+
+def _corrections(loaded: dict[str, LoadedTable]) -> tuple[list[str], dict[str, int]]:
+    """Lo que hubo que corregir o completar en las filas usadas, y su recuento por tipo."""
+    notes, summary = [], {}
+
+    def count(kind: str, n: int = 1) -> None:
+        summary[kind] = summary.get(kind, 0) + n
+
+    for item in loaded.values():
+        misread = [h for h in item.table.header_raw
+                   if re.fullmatch(UNIT_HEADER, h) and not h.startswith("£")]
+        if misread:
+            count("cabeceras £ leídas como otra letra", len(misread))
+            notes.append(f"pág. {item.spec.page}: {len(misread)} de {len(item.table.header_raw)} "
+                         f"cabeceras £ leídas como {', '.join(sorted(set(misread)))}")
+        for key, row in item.rows.items():
+            for index, amount in row.amounts.items():
+                if not (amount.fixes or amount.second_pass):
+                    continue
+                if amount.second_pass:
+                    count("segundas lecturas de celda")
+                elif amount.dash:
+                    count("guiones→cero detectados en la imagen")
+                else:
+                    for fix in amount.fixes:
+                        count(fix)
+                notes.append(f"pág. {item.spec.page} {key} [{item.spec.columns[index]}]: "
+                             f"{amount.raw!r} -> {amount.value:,} ({'; '.join(amount.fixes)})")
+    return notes, summary
+
+
+def _page(method: str, pdf_path: Path, sha256: str, page: int, interim: Path, region):
+    if method == "ocr":
+        folder = interim / "ocr" / sha256
+        if not ocr.page_paths(folder, page, region)["json"].exists():
+            ocr.ocr_page(pdf_path, sha256, page, interim / "ocr", region)
+        return ocr.load_page(folder, page, region)
+    return (pdf_text.page_observations(pdf_path, page),
+            pdf_text.page_image(pdf_path, sha256, page, interim / "text"))
+
+
+def read_document(name: str, spec: DocumentSpec, pdf_path: Path, sha256: str,
+                  interim: Path) -> DocumentResult:
+    loaded: dict[str, LoadedTable] = {}
+    for table_spec in spec.tables:
+        page = table_spec.page
+        observations, image_path = _page(spec.method, pdf_path, sha256, page, interim,
+                                         table_spec.region)
+        if not re.search(spec.unit_evidence, " ".join(o.text for o in observations), re.I):
+            raise ExtractionError(f"pág. {page}: no aparece {spec.unit_evidence!r}, así que no "
+                                  "se puede confirmar la unidad")
+        with Image.open(image_path) as image:
+            region = in_region(observations, table_spec.region, image.width, image.height)
+            try:
+                candidates = read_tables(group_rows(region), table_spec.header, spec.thousands)
+            except TableError as exc:
+                raise ExtractionError(f"pág. {page}: {exc}") from exc
+            candidates = [t for t in candidates if len(t.column_x2) == len(table_spec.columns)]
+            if table_spec.select:
+                candidates = [t for t in candidates
+                              if any(re.search(table_spec.select, r.label) for r in t.rows)]
+            if table_spec.header_label:
+                candidates = [t for t in candidates
+                              if re.search(table_spec.header_label, t.header_label)]
+            if len(candidates) != 1:
+                raise ExtractionError(
+                    f"pág. {page}: se esperaba una tabla {table_spec.name} de "
+                    f"{len(table_spec.columns)} columnas y hay {len(candidates)}"
+                )
+            table = candidates[0]
+            rows = find_rows(table, table_spec.rows, page)
+            if table_spec.rows_by_order:
+                rows |= rows_by_order(table, table_spec.rows_by_order, table_spec.anchors, page)
+            for key, previous in table_spec.totals_after.items():
+                rows[key] = total_after(table, rows[previous], page)
+            try:  # solo las filas que se usan: el resto de la página puede ser texto corrido
+                ocr.fill_missing_cells(table, image, ocr.text_height(region),
+                                       allow_ocr=spec.method == "ocr", rows=list(rows.values()))
+            except ocr.OcrError as exc:
+                raise ExtractionError(f"pág. {page}: {exc}") from exc
+        loaded[table_spec.name] = LoadedTable(table_spec, table, rows, image_path)
+
+    checks = _checks(name, loaded, spec.links)
+    figures = []
+    for figure_spec in spec.figures:
+        cells = [(table, key, figure_spec.column) for table, key in figure_spec.parts]
+        amounts = tuple(_amount(loaded, cell) for cell in cells)
+        rows = [loaded[table].rows[key] for table, key in figure_spec.parts]
+        tables = {loaded[table].spec.page: loaded[table] for table, _ in figure_spec.parts}
+        if len(tables) != 1:
+            raise ExtractionError(f"{figure_spec.concept}: sus partes están en varias páginas")
+        [(page, item)] = tables.items()
+        figures.append(Figure(
+            figure_spec.concept, page,
+            " + ".join(r.raw_label or "(total sin rótulo)" for r in rows), figure_spec.column,
+            sum(a.value for a in amounts), amounts, tuple(r.row for r in rows), item.image_path,
+            spec.method, figure_spec.note))
+
+    covered = {cell for check in checks if check.ok for cell in check.cells}
+    used = {cell for check in checks for cell in check.cells}
+    used |= {(table, key, f.column) for f in spec.figures for table, key in f.parts}
+    for cell in sorted(used):
+        if _amount(loaded, cell).dash and cell not in covered:
+            raise ExtractionError(f"pág. {loaded[cell[0]].spec.page}: el guion de {cell[1]} "
+                                  f"[{cell[2]}] se leyó como cero y ningún cuadre lo respalda")
+    return DocumentResult(name, figures, checks, *_corrections(loaded))

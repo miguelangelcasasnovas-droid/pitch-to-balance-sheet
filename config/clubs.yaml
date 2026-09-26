@@ -34,3 +34,15 @@ clubs:
     entity: Newcastle United Limited
     companies_house_number: "02529667"
     fiscal_year_end: "06-30"
+  # Cotizados. Fuente: docs/plan.md, sección 6 ("Todos cierran el 30 de junio"), y la portada de
+  # cada informe 2024/25 (Juventus: "al 30 giugno 2025"; Celtic: "year ended 30 June 2025").
+  - club_id: juventus
+    name: Juventus
+    entity: Juventus Football Club S.p.A.
+    companies_house_number: null
+    fiscal_year_end: "06-30"
+  - club_id: celtic
+    name: Celtic
+    entity: Celtic plc
+    companies_house_number: "SC003487"  # plan, sección 7.1; sus cuentas no se bajan de ahí
+    fiscal_year_end: "06-30"
