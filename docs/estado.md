@@ -27,6 +27,21 @@ Comprobaciones hechas (la salida real está en el cierre de la fase):
 4. En `ci-check`, `pytest` da 1 failed y 4 passed, con exit 1. `main` sigue en verde.
 5. CI en GitHub Actions, tras el push del usuario: `main` en verde y `ci-check` en rojo, según comprobó el usuario el 26/09/2026.
 
+## Fase 2a: medición de la capa de texto (en curso)
+
+Cuentas 2024/25 de los 6 clubes ingleses, descargadas con la API de Companies House (sección 7.1 del plan).
+
+**Criterio de clasificación, fijado el 26/09/2026 antes de medir:**
+
+- **Caracteres de una página:** caracteres no blancos del texto que devuelve `pdfplumber` (`page.extract_text()`).
+- **Página con texto:** 200 caracteres o más. Una página de cuentas con capa de texto tiene cientos o miles de caracteres. Por debajo de 200 solo caben un encabezado, un número de página o un sello.
+- **Clasificación del PDF,** según la proporción de páginas con texto:
+  - **texto:** 80% o más;
+  - **imagen:** menos del 20%;
+  - **mixto:** entre el 20% y el 80%.
+- **Palabras clave,** sin distinguir mayúsculas: "Turnover" o "Revenue", y "Staff costs" o "Wages". Se informan aparte y no cambian la clasificación. Si un PDF de texto no las contiene, se marca para revisarlo.
+- **Regla de la decisión 3:** solo cuentan los PDFs de imagen. Con 3 o más de 6, se propone OCR para esos; con menos, quedan como hueco.
+
 ## Decisiones
 
 1. **Carpeta de trabajo:** `~/football-club-finance`.
