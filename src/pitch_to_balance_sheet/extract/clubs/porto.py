@@ -272,6 +272,10 @@ SPEC = ClubSpec(
                        note="Mais-valias com alienações de passes de jogadores (nota 28): "
                             "proveitos menos custos con alienações (i)+(ii). Fuera quedan "
                             "cesiones y otros."),
+            FigureSpec("player_trading_other_income",
+                       (("players", "loan_income"), ("players", "other_income")), "2025",
+                       note="Proveitos com empréstimos de jogadores y outros proveitos com "
+                            "jogadores (nota 28), fuera de las mais-valias."),
         ),
     ),
     controls=(DocumentSpec(
@@ -320,12 +324,21 @@ SPEC = ClubSpec(
                        note=RELEASE_NET_NOTE),
             FigureSpec("net_result_attributable_parent", (("results", "net_result_parent"),),
                        "2025"),
+            # El mismo criterio sobre las partidas del comunicado (pág. 4).
+            FigureSpec("revenue_broadcasting",
+                       (("income", "uefa"), ("income", "fifa"), ("income", "broadcasting")),
+                       "2025", note="Provas UEFA + Provas FIFA + Direitos de Transmissão."),
+            FigureSpec("revenue_other", (("income", "other_sports"), ("income", "other")), "2025",
+                       note="Outras Receitas Desportivas + Outros Proveitos."),
         ),
         without={
             "staff_severance_disclosed": "el comunicado no desglosa los gastos de personal",
-            mix.UNASSIGNED: "el comunicado agrupa los ingresos de otra forma (Publicidade "
-                            "incluye Corporate Hospitality); las partidas pendientes se comparan "
-                            "cuando estén decididas",
+            "revenue_matchday": "el comunicado suma Corporate Hospitality (matchday) a "
+                                "Publicidade e Sponsorização",
+            "revenue_commercial": "el comunicado suma Corporate Hospitality (matchday) a "
+                                  "Publicidade e Sponsorização",
+            "player_trading_other_income": "el comunicado da el resultado con cedência de "
+                                           "passes, sin desglose",
             "amortisation_player_registrations": "el comunicado da amortización y deterioro "
                                                  "juntos (34.377)",
             "impairment_player_registrations": "el comunicado da amortización y deterioro "

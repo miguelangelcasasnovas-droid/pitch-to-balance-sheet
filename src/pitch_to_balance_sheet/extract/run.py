@@ -43,9 +43,10 @@ SHORT = {"revenue_matchday": "matchday", "revenue_broadcasting": "broadcasting",
          "revenue_commercial": "commercial", "revenue_other": "other",
          "amortisation_player_registrations": "amortización",
          "impairment_player_registrations": "deterioro",
-         "profit_on_player_disposals": "resultado por traspasos"}
+         "profit_on_player_disposals": "resultado por traspasos",
+         "player_trading_other_income": "otros ingresos de jugadores"}
 PLAYER_CONCEPTS = ("amortisation_player_registrations", "impairment_player_registrations",
-                   "profit_on_player_disposals")
+                   "profit_on_player_disposals", "player_trading_other_income")
 RESTATEMENT_THRESHOLD_PCT = 1.0  # sección 5 del plan
 METHODS = {"text": "pdfplumber (texto del PDF)",
            "ixbrl": "iXBRL (ix:nonFraction del XHTML del paquete ESEF)"}
@@ -226,6 +227,14 @@ def extract_club(season: str, spec: ClubSpec, reocr: bool = False) -> ClubResult
         result.crops[figure.concept] = str(path.relative_to(ROOT))
     if result.failed:
         result.error = f"{len(result.failed)} de {len(result.checks)} cuadres no cuadran"
+    # Un concepto sin partidas vale 0 solo si las partidas suman exactamente el total.
+    values = {figure.concept: figure.value for figure in result.figures}
+    club_mix = mix.load().get(spec.club_id)  # un club sin partidas lo para mix_frame
+    zero = club_mix.zero_concepts() if club_mix else ()
+    not_zero = {concept: values[concept] for concept in zero if values.get(concept, 0) != 0}
+    if not_zero and not result.error:
+        result.error = "las partidas no suman exactamente el total: " + ", ".join(
+            f"{concept} daría {value:,}, no 0" for concept, value in not_zero.items())
     return result
 
 
@@ -390,12 +399,13 @@ def mix_table(results: list[ClubResult], frame: pd.DataFrame) -> str:
         frame.itertuples(), _mix_gap(frame), _mix_tolerance(frame["lines"]), strict=True)}
     pending = {row.club_id: row.unassigned for row in frame.itertuples()}
     lines = ["| Club | Moneda | Matchday | Broadcasting | Commercial | Other | Suma = ingresos "
-             "sin traspasos | Amortización | Deterioro | Resultado por traspasos | Huecos |",
-             "|" + " --- |" * 11]
+             "sin traspasos | Amortización | Deterioro | Resultado por traspasos | Otros "
+             "ingresos de jugadores | Huecos |",
+             "|" + " --- |" * 12]
     for result in results:
         name = names.get(result.club_id, result.club_id)
         if result.error:
-            lines.append(f"| {name} | {result.spec.currency} |" + " — |" * 8
+            lines.append(f"| {name} | {result.spec.currency} |" + " — |" * 9
                          + f" error: {result.error} |")
             continue
         total = ("sí" if ok[result.club_id] else "**no**") + (

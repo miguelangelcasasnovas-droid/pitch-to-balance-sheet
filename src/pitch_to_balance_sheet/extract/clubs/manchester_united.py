@@ -78,8 +78,8 @@ INTANGIBLE_ROWS = {
 }
 MIX = mix.for_club("manchester_united")
 IMPAIRMENT_GAP = (
-    "no se publica: el bloque de 2025 de la nota 16 (pág. 128) no tiene línea de deterioro de "
-    "registrations, y su movimiento cuadra sin ella"
+    "no se publica: la nota 16 de movimientos (pág. 128) no tiene fila de deterioro en el bloque "
+    "de 2025 (tampoco el 20-F 2026, pág. 130), y el movimiento cuadra sin ella"
 )
 
 
@@ -178,6 +178,9 @@ def document(report_year: int, control_index: int | None) -> DocumentSpec:
             FigureSpec("profit_on_player_disposals", (("disposals", "registrations"),), "2025",
                        note="Profit on disposal of registrations (nota 8); sin ingresos por "
                             "cesiones en 2025."),
+            FigureSpec("player_trading_other_income", (("disposals", "loan_income"),), "2025",
+                       note="Player loan income de la nota 8: guion en 2025, cero, respaldado por "
+                            "el cuadre de la nota."),
         ),
     )
 

@@ -4,14 +4,18 @@
 # player_trading para los traspasos y cesiones que el club mete en sus ingresos (se restan para
 # revenue_ex_player_trading, sección 9 del plan).
 #
-# Criterio:
-# - La agrupación del propio club, cuando coincide con matchday, broadcasting o commercial.
-# - Los premios UEFA van a broadcasting (sección 9 del plan).
-# - Una partida propia que podría ir a más de un concepto es dudosa. Por ejemplo: retail o
-#   merchandising, "other commercial", hospitality o catering sueltos, premios FIFA fuera de
-#   broadcasting u operaciones del estadio.
-# - Una dudosa no tiene concepto (concept: null) y lleva sus candidatos hasta que decida el
-#   usuario. Mientras tanto, sus conceptos candidatos quedan como hueco.
+# Criterio único, el de la Deloitte Football Money League (decisión del usuario del 27/09/2026,
+# sección 9 del plan):
+# - matchday: entradas, abonos y hospitality de partido;
+# - broadcasting: derechos audiovisuales y premios de competiciones (UEFA y FIFA);
+# - commercial: patrocinio, merchandising, retail, licencias, y conferencias o catering fuera de
+#   partido;
+# - other: solo lo que no es fútbol (inmuebles y similares), lo mínimo posible.
+# Cuando la agrupación del propio club choca con este criterio, manda el criterio, y el motivo de
+# la partida lo anota. Un concepto al que no va ninguna partida vale 0, derivado, si las
+# partidas suman exactamente el total; solo es hueco si el club no publica desglose.
+# Una partida que no se puede clasificar sin decidir es dudosa: concept: null y sus candidatos;
+# sus conceptos candidatos quedan como hueco hasta que decida el usuario. Ahora no hay ninguna.
 #
 # Cada partida dice qué celda de la especificación del club la lee (cell: tabla.fila, en
 # src/pitch_to_balance_sheet/extract/clubs/<club>.py) y en qué columna. total es el total
@@ -41,13 +45,11 @@
       other_commercial:
         cell: revenue.other_commercial
         label: Other commercial activities
-        concept: null
-        candidates: [revenue_commercial, revenue_other]
+        concept: revenue_commercial
         reason: >-
-          Se llama "other commercial", el ejemplo de dudosa. La nota dice que los ingresos
-          tienen tres componentes principales (matchday, broadcasting y commercial), lo que
-          apunta a commercial. Incluye el neto de la tienda externalizada (+61,8 millones si no
-          lo estuviera).
+          Commercial (criterio; era dudosa, decidida por el usuario). La nota dice que los
+          ingresos tienen tres componentes principales: matchday, broadcasting y commercial.
+          Incluye el neto de la tienda externalizada (+61,8 millones si no lo estuviera).
   manchester_united:
     source: nota 4.1, pág. 115
     column: "2025"
@@ -105,9 +107,8 @@
       retail:
         cell: revenue.retail
         label: Retail outlets and e-commerce
-        concept: null
-        candidates: [revenue_commercial, revenue_other]
-        reason: Retail suelto, el ejemplo de dudosa.
+        concept: revenue_commercial
+        reason: Retail, commercial (criterio; era dudosa, decidida por el usuario).
       media:
         cell: revenue.media
         label: Media rights
@@ -116,11 +117,10 @@
       stadium:
         cell: revenue.stadium
         label: Stadium operations
-        concept: null
-        candidates: [revenue_matchday, revenue_commercial]
+        concept: revenue_matchday
         reason: >-
-          Operaciones del estadio sueltas: pueden ser del día de partido (catering, hospitality) o
-          comerciales (eventos, alquiler). La nota no lo precisa.
+          Matchday (era dudosa, decidida por el usuario), con nota: la nota no precisa si son del
+          día de partido (catering, hospitality) o comerciales (eventos, alquiler).
       other:
         cell: revenue.other
         label: Other
@@ -151,11 +151,10 @@
       products:
         cell: pnl.products
         label: Ricavi da vendite di prodotti e licenze
-        concept: null
-        candidates: [revenue_commercial, revenue_other]
+        concept: revenue_commercial
         reason: >-
-          Venta de productos y licencias (retail), una partida propia del club. Incluye también la
-          Juventus Academy (nota 34).
+          Venta de productos y licencias: retail y licencias, commercial (criterio; era dudosa,
+          decidida por el usuario). Incluye también la Juventus Academy (nota 34).
       player_rights_income:
         cell: pnl.player_rights_income
         label: Proventi da gestione diritti calciatori
@@ -164,14 +163,51 @@
           Traspasos y cesiones: se resta para revenue_ex_player_trading (sección 9 del plan).
           Detalle en la nota 35: plusvalenze (en profit_on_player_disposals), cesiones temporales
           y otros ingresos (sell-on y bonus), sin concepto.
-      other_income:
-        cell: pnl.other_income
-        label: Altri ricavi e proventi
+      commercial_initiatives:
+        cell: note36.commercial_initiatives
+        label: Proventi da iniziative commerciali (dentro de Altri ricavi e proventi)
+        concept: revenue_commercial
+        reason: >-
+          Membership, campus de verano, museo, tour del estadio y fan clubs (nota 36): commercial.
+          Choca con la agrupación del club, que la mete en Altri ricavi e proventi: manda el
+          criterio (decisión del usuario).
+      estimates:
+        cell: note36.estimates
+        label: Proventi da aggiornamenti di stime (dentro de Altri ricavi e proventi)
+        concept: revenue_other
+        reason: Actualizaciones de estimaciones y pasivos que ya no existen (nota 36); no es fútbol.
+      lca:
+        cell: note36.lca
+        label: Contributi da LCA e vari (dentro de Altri ricavi e proventi)
+        concept: revenue_other
+        reason: Resto de Altri ricavi e proventi, a other por decisión del usuario.
+      hotel:
+        cell: note36.hotel
+        label: Servizi alberghieri (dentro de Altri ricavi e proventi)
+        concept: revenue_other
+        reason: Resto de Altri ricavi e proventi, a other por decisión del usuario.
+      insurance:
+        cell: note36.insurance
+        label: Indennizzi e altri proventi assicurativi (dentro de Altri ricavi e proventi)
+        concept: revenue_other
+        reason: Indemnizaciones de seguros; no es fútbol.
+      stadium_events:
+        cell: note36.stadium_events
+        label: Proventi da eventi e attività stadio "no match day" (dentro de Altri ricavi e proventi)
         concept: revenue_other
         reason: >-
-          Partida de otros ingresos del club (nota 36). Contiene iniciativas comerciales (13.658:
-          membership, museo, tour del estadio), servicios hoteleros y eventos del estadio sin
-          partido, entre otros.
+          Resto de Altri ricavi e proventi, a other por decisión del usuario. Con el criterio
+          serían commercial (eventos fuera de partido): pendiente de confirmar.
+      rents:
+        cell: note36.rents
+        label: Affitti attivi (dentro de Altri ricavi e proventi)
+        concept: revenue_other
+        reason: Alquileres, sobre todo del negocio de retail cedido a Fanatics (nota 36).
+      other:
+        cell: note36.other
+        label: Altri (dentro de Altri ricavi e proventi)
+        concept: revenue_other
+        reason: Resto de Altri ricavi e proventi, sin detalle.
   borussia_dortmund:
     source: nota 16, pág. 160 (Geschäftsbericht en alemán)
     column: "2025"
@@ -195,17 +231,18 @@
       merchandising:
         cell: revenue.merchandising
         label: Merchandising
-        concept: null
-        candidates: [revenue_commercial, revenue_other]
-        reason: Merchandising suelto, el ejemplo de dudosa (retail).
+        concept: revenue_commercial
+        reason: Merchandising, commercial (criterio; era dudosa, decidida por el usuario).
       conference:
         cell: revenue.conference
         label: Conference, Catering, Sonstige
-        concept: null
-        candidates: [revenue_matchday, revenue_commercial, revenue_other]
+        concept: revenue_commercial
         reason: >-
-          Mezcla conferencias y catering (del día de partido o comerciales) con "Sonstige"
-          (otros) en una sola partida.
+          Commercial (era dudosa, decidida por el usuario), con nota: puede incluir catering de
+          partido. Según el informe de gestión (pág. 57), de los 50.008 miles son hospitality y
+          public catering 22.052, eventos fuera de partido y tours 5.186, comisiones de preventa
+          de entradas 5.086, cesiones de internacionales 3.049 y cesiones, derechos de formación
+          y solidaridad FIFA 3.858.
   ajax:
     source: nota 25, pág. 108
     column: "2025"
@@ -226,8 +263,8 @@
         label: Premies Europese competities
         concept: revenue_broadcasting
         reason: >-
-          Premios UEFA: van a broadcasting (sección 9 del plan), aunque el club los mete en su
-          subtotal de partidos.
+          Premios UEFA, broadcasting (criterio). Choca con la agrupación del club, que los mete
+          en su subtotal de partidos: manda el criterio.
       season_tickets:
         cell: revenue.season_tickets
         label: Seizoenkaarten
@@ -256,9 +293,8 @@
       merchandising:
         cell: revenue.merchandising
         label: Merchandising
-        concept: null
-        candidates: [revenue_commercial, revenue_other]
-        reason: Merchandising suelto, el ejemplo de dudosa (retail).
+        concept: revenue_commercial
+        reason: Merchandising, commercial (criterio; era dudosa, decidida por el usuario).
       other:
         cell: revenue.other
         label: Overige baten
@@ -298,23 +334,25 @@
       sales:
         cell: pnl.sales
         label: Vendas
-        concept: null
-        candidates: [revenue_commercial, revenue_other]
-        reason: Venta de merchandising de PortoComercial (nota 25), el ejemplo de dudosa (retail).
+        concept: revenue_commercial
+        reason: >-
+          Venta de merchandising de PortoComercial (nota 25): commercial (criterio; era dudosa,
+          decidida por el usuario).
       uefa:
         cell: services.uefa
         label: Prémios competições UEFA
         concept: revenue_broadcasting
-        reason: Premios UEFA, en broadcasting (sección 9 del plan).
+        reason: >-
+          Premios UEFA, broadcasting (criterio). Choca con la agrupación del club, que los mete en
+          receitas desportivas: manda el criterio.
       fifa:
         cell: services.fifa
         label: Prémios competições FIFA
-        concept: null
-        candidates: [revenue_broadcasting, revenue_other]
+        concept: revenue_broadcasting
         reason: >-
-          Premios del Mundial de Clubes. El plan solo fija los premios UEFA. Juventus y Benfica
-          los meten en sus derechos audiovisuales; Porto, en receitas desportivas junto a la
-          taquilla y los premios UEFA.
+          Premios del Mundial de Clubes: broadcasting (criterio; era dudosa, decidida por el
+          usuario). Choca con la agrupación del club, que los mete en receitas desportivas:
+          manda el criterio.
       tickets:
         cell: services.tickets
         label: Receita de bilheteira
@@ -328,9 +366,10 @@
       other_sports:
         cell: services.other_sports
         label: Outras receitas desportivas
-        concept: null
-        candidates: [revenue_matchday, revenue_other]
-        reason: Otros ingresos deportivos, sin detalle en la nota.
+        concept: revenue_other
+        reason: >-
+          Otros ingresos deportivos, sin detalle en la nota: other (era dudosa, decidida por el
+          usuario).
       advertising:
         cell: services.advertising
         label: Publicidade
@@ -344,11 +383,11 @@
       hospitality:
         cell: services.hospitality
         label: Corporate Hospitality
-        concept: null
-        candidates: [revenue_matchday, revenue_commercial]
+        concept: revenue_matchday
         reason: >-
-          Hospitality suelta: venta de palcos y asientos VIP para los partidos (nota 25). El
-          comunicado la suma a Publicidade e Sponsorização.
+          Venta de palcos y asientos VIP para los partidos (nota 25): hospitality de partido,
+          matchday (criterio; era dudosa, decidida por el usuario). El comunicado la suma a
+          Publicidade e Sponsorização.
       other_services:
         cell: services.other_services
         label: Outras prestações de serviços
@@ -384,9 +423,8 @@
       merchandising:
         cell: ixbrl.merchandising
         label: Ricavi da merchandising (ifrs-full:RevenueFromSaleOfGoods)
-        concept: null
-        candidates: [revenue_commercial, revenue_other]
-        reason: Merchandising suelto, el ejemplo de dudosa (retail).
+        concept: revenue_commercial
+        reason: Merchandising, commercial (criterio; era dudosa, decidida por el usuario).
       other_income:
         cell: ixbrl.other_income
         label: Altri ricavi (ifrs-full:OtherIncome)
@@ -528,7 +566,8 @@
         concept: revenue_commercial
         reason: >-
           Categoría Commercial del club: patrocinio, merchandising, conferencias y banquetes,
-          catering y otros comerciales (nota 4).
+          catering y otros comerciales (nota 4). Commercial (criterio), con nota: el catering
+          puede incluir el de partido, que el criterio pondría en matchday; la nota no lo separa.
       other_income:
         cell: turnover.other_income
         label: Other income

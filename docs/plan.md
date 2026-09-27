@@ -242,14 +242,20 @@ Cinco métricas por club y temporada, y una valoración por EV/ingresos que da u
 **Reparto de ingresos y conceptos de jugadores (fase 3a, 27/09/2026):**
 
 - **Mapeo:** `config/line_items.yaml` recoge cada partida original de ingresos de cada club, el concepto al que va (`revenue_matchday`, `revenue_broadcasting`, `revenue_commercial` o `revenue_other`) y el motivo.
-- **Criterio del mapeo:** se sigue la agrupación del propio club cuando coincide con esas categorías, y los premios UEFA van a broadcasting.
-- **Partida dudosa:** una partida propia que podría ir a más de un concepto (retail o merchandising, "other commercial", hospitality o catering sueltos, premios FIFA fuera de broadcasting...). Queda sin concepto y con sus candidatos hasta que decida el usuario; mientras tanto, esos conceptos son hueco.
-- **Hueco:** un concepto al que no va ninguna partida.
+- **Criterio único, el de la Deloitte Football Money League** (decidido el 27/09/2026):
+  - matchday: entradas, abonos y hospitality de partido;
+  - broadcasting: derechos audiovisuales y premios de competiciones (UEFA y FIFA);
+  - commercial: patrocinio, merchandising, retail, licencias, y conferencias o catering fuera de partido;
+  - other: solo lo que no es fútbol (inmuebles y similares), lo mínimo posible.
+- **Cuando la agrupación del propio club choca con el criterio,** manda el criterio, y el motivo de la partida lo anota en `line_items.yaml`.
+- **Concepto sin partidas:** vale 0, derivado (`is_derived`), si las partidas del club suman exactamente `revenue_ex_player_trading`. Si no suman exactamente, la extracción da error. Solo es hueco si el club no publica desglose.
+- **Partida dudosa:** una que no se puede clasificar sin decidir. Queda sin concepto y con sus candidatos hasta que decida el usuario; mientras tanto, esos conceptos son hueco.
 - **Validación con pandera:** matchday + broadcasting + commercial + other, más las partidas pendientes, tiene que ser `revenue_ex_player_trading`, con la tolerancia de redondeo de la sección 5. Si no cuadra, la extracción sale con error.
 - **Build:** una partida sin mapear la rompe. Las partidas de cada club tienen que sumar el total publicado.
 - **`amortisation_player_registrations`:** la amortización del año de los derechos de jugadores.
 - **`impairment_player_registrations`:** su deterioro. Si el club no lo separa, es hueco con motivo.
 - **`profit_on_player_disposals`:** el beneficio neto por la venta de derechos de jugadores, tal como lo publica el club (plusvalías menos minusvalías y, según el club, costes de venta). No incluye cesiones ni otros ingresos de jugadores.
+- **`player_trading_other_income`** (decidido el 27/09/2026): cesiones, sell-on fees y bonus que el club no incluye en `profit_on_player_disposals`. No entra en los ingresos; entrará en el denominador del SCR aproximado, en el promedio de tres años junto al resultado por traspasos. Es hueco si el club no lo publica por separado.
 
 **Resultado neto, decidido el 27/09/2026:** `net_result` es el resultado consolidado total, con los minoritarios. `net_result_attributable_parent`, lo atribuible a la matriz, es informativo y se guarda en los clubes que lo publican.
 
@@ -264,7 +270,7 @@ Cinco métricas por club y temporada, y una valoración por EV/ingresos que da u
 El SCR aproximado imita la estructura de la UEFA: el resultado de traspasos se promedia a 3 años. No separa los salarios de jugadores y usa año fiscal, por eso es aproximado.
 
 ```math
-\text{SCR}_{\text{aprox}} = \frac{\text{gastos de personal} + \text{amortización de derechos de jugadores}}{\text{ingresos} + \overline{(\text{resultado por traspasos} - \text{deterioro de derechos})}_{3\ \text{años}}}
+\text{SCR}_{\text{aprox}} = \frac{\text{gastos de personal} + \text{amortización de derechos de jugadores}}{\text{ingresos} + \overline{(\text{resultado por traspasos} + \text{otros ingresos de jugadores} - \text{deterioro de derechos})}_{3\ \text{años}}}
 ```
 
 Valoración por comparables:

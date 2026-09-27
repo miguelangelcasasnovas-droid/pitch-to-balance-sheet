@@ -72,6 +72,12 @@ REVENUE_EX_NOTE = (
     "ni cesiones."
 )
 
+PLAYER_OTHER_INCOME_GAP = (
+    "no se publica por separado: la cuenta y las notas leídas no dan ingresos por cesiones, "
+    "sell-on ni bonus fuera de profit_on_player_disposals"
+)
+
+
 SPEC = ClubSpec(
     club_id="newcastle",
     currency="GBP",
@@ -125,7 +131,7 @@ SPEC = ClubSpec(
               for year in COLUMNS),
             MIX.check(),
         ),
-        gaps=MIX.gaps(),
+        gaps={**MIX.gaps(), "player_trading_other_income": PLAYER_OTHER_INCOME_GAP},
         figures=(
             FigureSpec("revenue_total_reported", (("pnl", "turnover"),), "2025"),
             FigureSpec("revenue_ex_player_trading", (("pnl", "turnover"),), "2025",

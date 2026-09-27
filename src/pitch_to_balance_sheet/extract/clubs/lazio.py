@@ -145,6 +145,11 @@ SPEC = ClubSpec(
             FigureSpec("profit_on_player_disposals", (("ixbrl", "disposal_result"),), "2025",
                        note="RICAVI NETTI DA CESSIONE DIRITTI PLURIENNALI PRESTAZIONI TESSERATI: "
                             "plusvalenze (11.491.495) menos minusvalenze (347.822)."),
+            FigureSpec("player_trading_other_income", (("ixbrl", "player_rights_income"),),
+                       "2025",
+                       note="Proventi da gestione diritti calciatori: según la nota 32 (pág. 193), "
+                            "cesiones temporales (2.553 miles) y otros proventi de jugadores (347 "
+                            "miles). Fuera de los ingresos sin traspasos."),
         ),
         tables=(
             XhtmlTableSpec("fund", 174, ("total",), (6,), FUND_ROWS, select=FUND_ROWS["charge"],

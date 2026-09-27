@@ -4,7 +4,9 @@ Lee config/line_items.yaml: cada partida original de ingresos de cada club, la c
 especificación que la lee y el concepto al que va, con el motivo. De ahí salen:
 - las cifras de los cuatro conceptos: la suma de sus partidas, cada una con su fuente;
 - los huecos: un concepto al que podría ir una partida dudosa (sin concepto hasta que decida el
-  usuario), o al que no va ninguna partida;
+  usuario);
+- un concepto al que no va ninguna partida vale 0, derivado: el total publicado menos todas las
+  partidas, que tiene que dar exactamente 0 (lo comprueba run.extract_club);
 - el cuadre de que todas las partidas, traspasos incluidos, suman el total publicado. Una fila
   de ingresos sin partida hace que no cuadre: rompe la build.
 """
@@ -54,18 +56,17 @@ class ClubMix:
         return pending
 
     def gaps(self) -> dict[str, str]:
-        """Conceptos sin cifra: a los que podría ir una dudosa, o a los que no va ninguna."""
-        pending, gaps = self._pending(), {}
-        for concept in MIX:
-            if concept in pending:
-                gaps[concept] = "pendiente de decidir: " + "; ".join(
-                    f"la partida dudosa «{item.label}» puede ir a "
-                    + " o ".join(item.candidates) for item in pending[concept]
-                ) + f" ({self.source})"
-            elif not any(item.concept == concept for item in self.items):
-                gaps[concept] = (f"el club no tiene una partida de este tipo: sus partidas "
-                                 f"({self.source}) suman el total sin ella")
-        return gaps
+        """Conceptos sin cifra: a los que podría ir una partida dudosa."""
+        return {concept: "pendiente de decidir: " + "; ".join(
+                    f"la partida dudosa «{item.label}» puede ir a " + " o ".join(item.candidates)
+                    for item in items) + f" ({self.source})"
+                for concept, items in self._pending().items() if concept in MIX}
+
+    def zero_concepts(self) -> tuple[str, ...]:
+        """Conceptos a los que no va ninguna partida: valen 0, derivado del total."""
+        pending = self._pending()
+        return tuple(concept for concept in MIX if concept not in pending
+                     and not any(item.concept == concept for item in self.items))
 
     def figures(self, column: str) -> tuple[FigureSpec, ...]:
         """Cifras de los conceptos firmes y, aparte, la suma de las partidas sin concepto firme,
@@ -75,6 +76,14 @@ class ClubMix:
             items = [item for item in self.items if item.concept == concept]
             if concept in gaps:
                 unassigned += items
+                continue
+            if not items:  # 0, derivado: el total menos todas las partidas
+                figures.append(FigureSpec(
+                    concept, (Part(*self.total), *(Part(item.table, item.row, item.column, -1)
+                                                  for item in self.items)),
+                    column, note=f"El club no tiene una partida de este tipo: el total publicado "
+                                 f"({self.source}) menos todas sus partidas, que suman "
+                                 "exactamente el total, es 0."))
                 continue
             figures.append(FigureSpec(
                 concept, tuple(Part(item.table, item.row, item.column) for item in items),

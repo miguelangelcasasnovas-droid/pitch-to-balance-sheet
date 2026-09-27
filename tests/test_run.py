@@ -74,3 +74,14 @@ def test_las_cifras_en_unidades_se_muestran_en_miles_redondeados():
     assert run._value(_figure("x", 1500), "units") == "2"  # la mitad, hacia arriba
     assert run._value(_figure("x", 690998), "thousands") == "690,998"
     assert Decimal(146041028) / 1000 == Decimal("146041.028")  # el CSV guarda el exacto
+
+
+def test_un_cero_derivado_que_no_es_cero_es_error(monkeypatch):
+    from pitch_to_balance_sheet.extract import mix
+
+    club = mix.ClubMix("x", "nota 1", ("t", "total", "2025"), (
+        mix.LineItem("gate", "t", "gate", "2025", "Gate", "revenue_matchday", "Taquilla."),))
+    monkeypatch.setattr(mix, "load", lambda *args: {"x": club})
+    result = _extract(monkeypatch, [_figure("revenue_other", 1)], [_figure("revenue_other", 1)])
+    assert result.error == ("las partidas no suman exactamente el total: revenue_other daría 1, "
+                            "no 0")

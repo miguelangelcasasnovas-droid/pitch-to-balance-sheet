@@ -119,7 +119,7 @@ def document(control_index: int | None) -> DocumentSpec:
                     tuple(("admin", row, "2025") for row in ADMIN_ROWS)),
             MIX.check(),
         ),
-        gaps=MIX.gaps(),
+        gaps={**MIX.gaps(), "player_trading_other_income": PLAYER_OTHER_INCOME_GAP},
         figures=(
             FigureSpec("revenue_total_reported", (("pnl", "turnover"),), "2025"),
             FigureSpec("revenue_ex_player_trading", (("pnl", "turnover"),), "2025",
@@ -141,6 +141,12 @@ REVENUE_EX_NOTE = (
     "La nota 2 (pág. 26) desglosa el turnover en media, commercial y match day: no hay "
     "traspasos ni cesiones."
 )
+
+PLAYER_OTHER_INCOME_GAP = (
+    "no se publica por separado: la cuenta y las notas leídas no dan ingresos por cesiones, "
+    "sell-on ni bonus fuera de profit_on_player_disposals"
+)
+
 
 SPEC = ClubSpec(
     club_id="liverpool",

@@ -46,11 +46,16 @@ def test_una_dudosa_deja_sin_cifra_a_sus_candidatos(tmp_path):
         ("revenue", key, "2025") for key in ("gate", "tv", "retail", "loans")))
 
 
-def test_un_concepto_sin_partidas_es_hueco_con_motivo(tmp_path):
+def test_un_concepto_sin_partidas_vale_cero_derivado_del_total(tmp_path):
     club = _load(tmp_path, YAML.replace("concept: null", "concept: revenue_commercial")
                  .replace("candidates: [revenue_commercial, revenue_other]", ""))
-    assert set(club.gaps()) == {"revenue_other"}
-    assert "no tiene una partida de este tipo" in club.gaps()["revenue_other"]
+    assert club.gaps() == {}
+    assert club.zero_concepts() == ("revenue_other",)
+    (other,) = [f for f in club.figures("2025") if f.concept == "revenue_other"]
+    parts = other.resolved()
+    assert (parts[0].row, parts[0].sign) == ("total", 1)
+    assert [(p.row, p.sign) for p in parts[1:]] == [
+        ("gate", -1), ("tv", -1), ("retail", -1), ("loans", -1)]
 
 
 @pytest.mark.parametrize(("old", "new", "error"), [

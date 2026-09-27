@@ -58,7 +58,9 @@ ATTRIBUTABLE_NOTE = (
 REVENUE_EX_NOTE = (
     "La nota 16 (pág. 160) desglosa los ingresos en Spielbetrieb, Werbung, TV-Vermarktung, "
     "Merchandising y Conference, Catering, Sonstige; los traspasos van aparte, en Ergebnis aus "
-    "Transfergeschäften (nota 17): no hay traspasos ni cesiones en los ingresos."
+    "Transfergeschäften (nota 17). Pero según el informe de gestión (pág. 57), Conference, "
+    "Catering, Sonstige incluye 3.858 de cesiones, derechos de formación y solidaridad FIFA: "
+    "pendiente de decidir si se restan (no es una línea de las cuentas)."
 )
 
 
@@ -190,7 +192,7 @@ def document(language: str, control_index: int | None) -> DocumentSpec:
                                 r"\(previous year: EUR 9,986 thousand\)"),
                 "2025", note=IMPAIRMENT_NOTE),
         ),
-        gaps=MIX.gaps(),
+        gaps={**MIX.gaps(), "player_trading_other_income": PLAYER_OTHER_INCOME_GAP},
         figures=(
             FigureSpec("revenue_total_reported", (("pnl", "revenue"),), "2025"),
             FigureSpec("revenue_ex_player_trading", (("pnl", "revenue"),), "2025",
@@ -208,6 +210,13 @@ def document(language: str, control_index: int | None) -> DocumentSpec:
                        note=DISPOSALS_NOTE),
         ),
     )
+
+
+PLAYER_OTHER_INCOME_GAP = (
+    "pendiente de decidir: según el informe de gestión (pág. 57), los ingresos por cesiones, "
+    "derechos de formación y solidaridad FIFA (3.858 miles) están dentro de la partida de "
+    "ingresos «Conference, Catering, Sonstige», no fuera de ellos"
+)
 
 
 SPEC = ClubSpec(

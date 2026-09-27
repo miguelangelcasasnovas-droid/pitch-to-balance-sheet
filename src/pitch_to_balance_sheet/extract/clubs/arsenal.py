@@ -148,6 +148,10 @@ SPEC = ClubSpec(
                             "nota 2."),
             FigureSpec("profit_on_player_disposals", (("pnl", "profit_disposal_players"),),
                        "total_2025", note="Profit on disposal of player registrations."),
+            FigureSpec("player_trading_other_income", (("turnover", "player_trading"),), "2025",
+                       note="Player trading de la nota 3: sobre todo cesiones (nota de la pág. 23; "
+                            "el informe estratégico, pág. 4, da 0,5 millones de cesiones). Fuera "
+                            "de los ingresos sin traspasos."),
         ),
     ),
 )

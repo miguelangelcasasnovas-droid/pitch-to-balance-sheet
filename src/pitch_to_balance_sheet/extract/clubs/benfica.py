@@ -163,6 +163,9 @@ SPEC = ClubSpec(
             FigureSpec("profit_on_player_disposals", (("transactions", "result_disposals"),),
                        "2025", note="Resultado com alienações de direitos de atletas (nota 20): "
                                     "plusvalías menos minusvalías y comisiones de venta."),
+            FigureSpec("player_trading_other_income", (("transactions", "other_income"),),
+                       "2025", note="Outros rendimentos com transações de direitos de atletas "
+                                    "(nota 20), fuera del resultado com alienações."),
         ),
     ),
 )

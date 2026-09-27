@@ -82,6 +82,13 @@ REVENUE_EX_NOTE = (
     "resultaat vergoedingssommen: no hay traspasos ni cesiones en los ingresos."
 )
 
+PLAYER_OTHER_INCOME_GAP = (
+    "no se publica por separado: la cuenta y las notas leídas no dan ingresos por cesiones, "
+    "sell-on ni bonus fuera de profit_on_player_disposals (resultaat vergoedingssommen es el "
+    "neto de ventas, nota 31)"
+)
+
+
 SPEC = ClubSpec(
     club_id="ajax",
     currency="EUR",
@@ -129,6 +136,7 @@ SPEC = ClubSpec(
         ),
         gaps={
             **MIX.gaps(),
+            "player_trading_other_income": PLAYER_OTHER_INCOME_GAP,
             "impairment_player_registrations": (
                 "no se publica por separado: la nota 30 (pág. 112) da una sola línea, "
                 "«Afschrijvingen vergoedingssommen»; el auditor (pág. 125) dice que no hubo "

@@ -19,6 +19,9 @@ fuera de la región, y debajo un detalle por jugador que la región deja fuera:
 - pág. 176, mitad izquierda, nota 42, oneri da gestione diritti calciatori: minusvalenze.
 - pág. 177, mitad izquierda, nota 44, ammortamenti e svalutazioni diritti calciatori.
 profit_on_player_disposals = plusvalenze − minusvalenze de las notas 35 y 42.
+- pág. 174, mitad izquierda, nota 36, altri ricavi e proventi: las iniziative commerciali van a
+  commercial y el resto a other (decisión del usuario del 27/09/2026).
+player_trading_other_income = cesiones temporales + altri ricavi (sell-on y bonus) de la nota 35.
 """
 
 from pitch_to_balance_sheet.extract import mix
@@ -183,6 +186,21 @@ def document(language: str, control_index: int | None) -> DocumentSpec:
     note35_rows["temporary"] = (r"^ricavi per cessione temporanea diritti calciatori/calciatrici$"
                                 if italian else r"^revenues from the temporary disposal of "
                                                 r"players registra-$")
+    note36_rows = {
+        "commercial_initiatives": (r"^proventi da iniziative commerciali$" if italian
+                                   else r"^income from commercial initiatives$"),
+        "estimates": (r"^proventi da aggiornamenti di stime$" if italian
+                      else r"^income from estimate adjustments$"),
+        "lca": r"^contributi da lca e vari$" if italian else r"^contributions from lca and others$",
+        "hotel": r"^servizi alberghieri$" if italian else r"^hotel services$",
+        "insurance": (r"^indennizzi e altri proventi assicurativi$" if italian
+                      else r"^insurance compensation and other insurance-related income$"),
+        "stadium_events": (r"^proventi da eventi e attivita stadio no match day$" if italian
+                           else r"^income from no match day events and stadium activities$"),
+        "rents": r"^affitti attivi$" if italian else r"^rental income$",
+        "other": r"^altri$" if italian else r"^other$",
+        "total": r"^altri ricavi e proventi$" if italian else r"^other income$",
+    }
     note44_rows = {
         "amortisation": r"^ammortamenti$" if italian else r"^amortisation$",
         "male": r"^calciatori professionisti$" if italian else r"^male professional players$",
@@ -213,6 +231,9 @@ def document(language: str, control_index: int | None) -> DocumentSpec:
                       header=header_years, totals_after=note42_after,
                       sums=(Sum("total", ("ancillary", "temporary", "losses_male", "losses_youth",
                                           "losses_female", "other")),)),
+            TableSpec("note36", 174, YEARS, note36_rows, region=(0.0, 0.0, 0.39, 0.43),
+                      header=header_years, select=note36_rows["commercial_initiatives"],
+                      sums=(Sum("total", tuple(note36_rows)[:-1]),)),
             TableSpec("note44", 177, YEARS, note44_rows,
                       region=(0.0, 0.0, 0.39, 0.76 if italian else 0.78), header=header_years,
                       select=note44_rows["write_downs"],
@@ -227,6 +248,7 @@ def document(language: str, control_index: int | None) -> DocumentSpec:
               for year in YEARS),
             *(Link(("note35", "total", year), ("pnl", "player_rights_income", year))
               for year in YEARS),
+            *(Link(("note36", "total", year), ("pnl", "other_income", year)) for year in YEARS),
             MIX.check(),
         ),
         gaps=MIX.gaps(),
@@ -254,6 +276,11 @@ def document(language: str, control_index: int | None) -> DocumentSpec:
                         Part("note42", "losses_youth", sign=-1),
                         Part("note42", "losses_female", sign=-1)),
                        "2025", note=DISPOSALS_NOTE),
+            FigureSpec("player_trading_other_income",
+                       (("note35", "temporary"), ("note35", "other")), "2025",
+                       note="Cesiones temporales (3.754) y altri ricavi: sell-on fees y bonus de "
+                            "traspasos (16.101), de la nota 35. Fuera de "
+                            "profit_on_player_disposals y de los ingresos."),
         ),
     )
 

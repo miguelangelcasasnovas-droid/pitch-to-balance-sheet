@@ -80,6 +80,12 @@ REVENUE_EX_NOTE = (
     "esa columna es un guion: no hay traspasos ni cesiones."
 )
 
+PLAYER_OTHER_INCOME_GAP = (
+    "no se publica por separado: la nota 3 da «other net football trading income and "
+    "expenditure» neto, junto a las amortizaciones"
+)
+
+
 SPEC = ClubSpec(
     club_id="tottenham",
     currency="GBP",
@@ -133,7 +139,7 @@ SPEC = ClubSpec(
             Link(("revenue", "revenue", "2024"), ("pnl", "revenue", "total_2024")),
             MIX.check(),
         ),
-        gaps=MIX.gaps(),
+        gaps={**MIX.gaps(), "player_trading_other_income": PLAYER_OTHER_INCOME_GAP},
         figures=(
             FigureSpec("revenue_total_reported", (("pnl", "revenue"),), "total_2025"),
             FigureSpec("revenue_ex_player_trading", (("pnl", "revenue"),), "total_2025",

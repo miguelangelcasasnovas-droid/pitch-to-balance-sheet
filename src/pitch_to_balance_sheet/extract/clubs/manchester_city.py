@@ -62,6 +62,12 @@ REVENUE_EX_NOTE = (
     "Revenue esa columna es un guion: no hay traspasos ni cesiones."
 )
 
+PLAYER_OTHER_INCOME_GAP = (
+    "no se publica por separado: la cuenta y las notas leídas no dan ingresos por cesiones, "
+    "sell-on ni bonus fuera de profit_on_player_disposals"
+)
+
+
 SPEC = ClubSpec(
     club_id="manchester_city",
     currency="GBP",
@@ -121,6 +127,7 @@ SPEC = ClubSpec(
         ),
         gaps={
             **MIX.gaps(),
+            "player_trading_other_income": PLAYER_OTHER_INCOME_GAP,
             "impairment_player_registrations": (
                 "no se publica por separado: la nota 12 (pág. 42) da un solo cargo del año, "
                 "169,546, que la nota 5 (pág. 36) llama «Amortisation and impairment of "

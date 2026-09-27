@@ -235,8 +235,9 @@ def test_las_especificaciones_de_los_clubes_se_cargan():
     assert SPECS["lazio"].primary.periods["2025"] == "2024-07-01/2025-06-30"
     assert SPECS["porto"].primary.tables[0].columns == ("2024", "2025")  # 2024 va antes
     assert set(SPECS["porto"].controls[0].without) == {
-        "staff_severance_disclosed", "_revenue_unassigned", "amortisation_player_registrations",
-        "impairment_player_registrations", "profit_on_player_disposals"}
+        "staff_severance_disclosed", "revenue_matchday", "revenue_commercial",
+        "amortisation_player_registrations", "impairment_player_registrations",
+        "profit_on_player_disposals", "player_trading_other_income"}
 
 
 def test_included_in_staff_costs_solo_admite_true_false_o_dudoso():
