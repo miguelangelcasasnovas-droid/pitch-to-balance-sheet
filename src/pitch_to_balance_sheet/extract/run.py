@@ -9,6 +9,8 @@ import html
 from dataclasses import dataclass, field
 from decimal import ROUND_HALF_UP, Decimal
 
+import pandas as pd
+import pandera.pandas as pa
 from PIL import Image
 
 from pitch_to_balance_sheet import manifest
@@ -20,7 +22,7 @@ from pitch_to_balance_sheet.config import (
     load_clubs,
     season_slug,
 )
-from pitch_to_balance_sheet.extract import ocr
+from pitch_to_balance_sheet.extract import ixbrl, mix, ocr
 from pitch_to_balance_sheet.extract.statements import (
     Check,
     ClubSpec,
@@ -36,6 +38,14 @@ CONCEPTS = ("revenue_total_reported", "revenue_ex_player_trading", "staff_costs"
             "net_result_attributable_parent")
 # Marca de la tabla: si la indemnización está dentro de los gastos de personal.
 INCLUDED_MARKS = {"true": " (dentro)", "false": " (fuera)", "dudoso": " (¿dentro?)"}
+MULTIPLIERS = {"units": 1, "thousands": 1000}
+SHORT = {"revenue_matchday": "matchday", "revenue_broadcasting": "broadcasting",
+         "revenue_commercial": "commercial", "revenue_other": "other",
+         "amortisation_player_registrations": "amortización",
+         "impairment_player_registrations": "deterioro",
+         "profit_on_player_disposals": "resultado por traspasos"}
+PLAYER_CONCEPTS = ("amortisation_player_registrations", "impairment_player_registrations",
+                   "profit_on_player_disposals")
 RESTATEMENT_THRESHOLD_PCT = 1.0  # sección 5 del plan
 METHODS = {"text": "pdfplumber (texto del PDF)",
            "ixbrl": "iXBRL (ix:nonFraction del XHTML del paquete ESEF)"}
@@ -80,6 +90,7 @@ class ClubResult:
     crops: dict[str, str] = field(default_factory=dict)
     restatements: list[Restatement] = field(default_factory=list)
     controls: list[str] = field(default_factory=list)  # resumen de cada control, para la tabla
+    gaps: dict[str, str] = field(default_factory=dict)  # concepto -> motivo
     error: str | None = None
 
     @property
@@ -93,10 +104,15 @@ class ClubResult:
 
 def excerpt_figure(figure: Figure, path) -> None:
     """Recorte de una cifra iXBRL: la fila de la tabla del XHTML de cada hecho, con su etiqueta,
-    contexto, unidad y escala."""
+    contexto, unidad y escala; o la fila de una nota sin etiquetar, con su página."""
     parts = []
     for component in figure.components:
         fact = component.row
+        if not isinstance(fact, ixbrl.Fact):
+            parts.append(f"<h2>{html.escape(component.label)}</h2>\n<p>Tabla sin etiquetar, pág. "
+                         f"{component.page} del XHTML, columna {html.escape(component.column)}."
+                         f"</p>\n<table border=\"1\">{fact}</table>")
+            continue
         parts.append(
             f"<h2>{html.escape(fact.concept)}</h2>\n<p>Contexto {html.escape(fact.context.id)} "
             f"({html.escape(fact.context.period)}), unidad {html.escape(fact.unit)}, scale "
@@ -142,6 +158,7 @@ def extract_club(season: str, spec: ClubSpec, reocr: bool = False) -> ClubResult
         primary = read_document("principal", spec.primary, RAW_DIR / pdf, sha256, INTERIM_DIR,
                                 reocr)
         result.figures = primary.figures
+        result.gaps = dict(primary.gaps)
         result.checks = list(primary.checks)
         result.corrections = list(primary.corrections)
         result.summary = dict(primary.summary)
@@ -198,6 +215,8 @@ def extract_club(season: str, spec: ClubSpec, reocr: bool = False) -> ClubResult
         return result
     slug = f"{spec.club_id}_{season_slug(season)}"
     for figure in result.figures:
+        if figure.concept.startswith("_"):  # interna, solo para la validación
+            continue
         path = INTERIM_DIR / "recortes" / f"{slug}_{figure.concept}_p{figure.page}.png"
         if figure.method == "ixbrl":
             path = path.with_suffix(".html")
@@ -224,6 +243,9 @@ def write_outputs(season: str, results: list[ClubResult]) -> list[str]:
     for result in results:
         spec = result.spec
         for figure in result.figures:
+            if figure.concept.startswith("_"):  # interna, solo para la validación
+                continue
+            unit = figure.unit or spec.unit
             figures.append({
                 "club_id": result.club_id,
                 "season": season,
@@ -231,9 +253,11 @@ def write_outputs(season: str, results: list[ClubResult]) -> list[str]:
                     season, fiscal_year_ends[result.club_id]).isoformat(),
                 "concept": figure.concept,
                 "value_reported": figure.value,
-                "unit_reported": spec.unit,
+                "unit_reported": unit,
                 "currency_reported": spec.currency,
-                "value_full": _full(figure.value, spec.multiplier),
+                "value_full": _full(figure.value, MULTIPLIERS[unit]),
+                "is_gap": False,
+                "gap_reason": "",
                 "is_derived": figure.is_derived,
                 "included_in_staff_costs": figure.included_in_staff_costs,
                 "components": figure.sources,
@@ -250,6 +274,17 @@ def write_outputs(season: str, results: list[ClubResult]) -> list[str]:
                 "crop": result.crops.get(figure.concept, ""),
                 "status": "error" if result.error else "ok",
             })
+        for concept, reason in result.gaps.items():
+            row = dict.fromkeys(figures[-1] if figures else (), "")
+            row.update({
+                "club_id": result.club_id, "season": season,
+                "fiscal_year_end": fiscal_year_end_date(
+                    season, fiscal_year_ends[result.club_id]).isoformat(),
+                "concept": concept, "unit_reported": spec.unit,
+                "currency_reported": spec.currency, "is_gap": True, "gap_reason": reason,
+                "source": result.source, "source_file": result.pdf, "sha256": result.sha256,
+                "status": "error" if result.error else "ok"})
+            figures.append(row)
         for check in result.checks:
             checks.append({"club_id": result.club_id, "document": check.document,
                            "page": check.page, "relation": check.relation,
@@ -283,6 +318,114 @@ def write_outputs(season: str, results: list[ClubResult]) -> list[str]:
     return written
 
 
+def _mix_tolerance(lines: pd.Series) -> pd.Series:
+    """La de siempre: max(1, floor(0,5 × partidas sumadas))."""
+    return (lines // 2).clip(lower=1)
+
+
+def _mix_gap(frame: pd.DataFrame) -> pd.Series:
+    return (frame[list(mix.MIX)].fillna(0).sum(axis=1) + frame["unassigned"]
+            - frame["revenue_ex_player_trading"])
+
+
+MIX_SCHEMA = pa.DataFrameSchema(
+    {
+        "club_id": pa.Column(str, unique=True),
+        "revenue_ex_player_trading": pa.Column(float),
+        **{concept: pa.Column(float, nullable=True) for concept in mix.MIX},
+        "unassigned": pa.Column(float),
+        "lines": pa.Column(int, pa.Check.ge(1)),
+    },
+    checks=pa.Check(
+        lambda frame: _mix_gap(frame).abs() <= _mix_tolerance(frame["lines"]),
+        error="matchday + broadcasting + commercial + other (+ partidas pendientes de decidir) "
+              "no cuadra con revenue_ex_player_trading"),
+    strict=True,
+)
+
+
+def mix_frame(results: list[ClubResult]) -> pd.DataFrame:
+    """Una fila por club sin error: los cuatro conceptos (vacío si es hueco), las partidas sin
+    concepto firme y revenue_ex_player_trading, en la unidad del club."""
+    rows = []
+    for result in results:
+        if result.error:
+            continue
+        values = {figure.concept: float(figure.value) for figure in result.figures}
+        rows.append({
+            "club_id": result.club_id,
+            "revenue_ex_player_trading": values["revenue_ex_player_trading"],
+            **{concept: values.get(concept) for concept in mix.MIX},
+            "unassigned": values.get(mix.UNASSIGNED, 0.0),
+            "lines": mix.for_club(result.club_id).lines,
+        })
+    frame = pd.DataFrame(rows, columns=["club_id", "revenue_ex_player_trading", *mix.MIX,
+                                        "unassigned", "lines"])
+    return frame.astype({"lines": int, "unassigned": float,
+                         **{concept: float for concept in mix.MIX}})
+
+
+def validate_mix(frame: pd.DataFrame) -> list[str]:
+    """Valida con pandera que las partidas suman los ingresos sin traspasos. Devuelve los clubes
+    que no cuadran, con la diferencia; vacío si todo cuadra."""
+    if frame.empty:  # ningún club sin error: no hay nada que validar
+        return []
+    try:
+        MIX_SCHEMA.validate(frame, lazy=True)
+    except pa.errors.SchemaErrors:
+        wrong = frame[_mix_gap(frame).abs() > _mix_tolerance(frame["lines"])]
+        return [f"{row.club_id}: las partidas suman {row.revenue_ex_player_trading + gap:,.0f} "
+                f"y revenue_ex_player_trading es {row.revenue_ex_player_trading:,.0f} "
+                f"(diferencia {gap:,.0f}, tolerancia {tolerance})"
+                for row, gap, tolerance in zip(wrong.itertuples(), _mix_gap(wrong),
+                                               _mix_tolerance(wrong["lines"]), strict=True)] or [
+            "el esquema de pandera no valida (tipos o columnas)"]
+    return []
+
+
+def mix_table(results: list[ClubResult], frame: pd.DataFrame) -> str:
+    """Reparto de ingresos y conceptos de jugadores, en miles de la moneda original."""
+    names = {club.club_id: club.name for club in load_clubs()}
+    ok = {row.club_id: abs(gap) <= tolerance for row, gap, tolerance in zip(
+        frame.itertuples(), _mix_gap(frame), _mix_tolerance(frame["lines"]), strict=True)}
+    pending = {row.club_id: row.unassigned for row in frame.itertuples()}
+    lines = ["| Club | Moneda | Matchday | Broadcasting | Commercial | Other | Suma = ingresos "
+             "sin traspasos | Amortización | Deterioro | Resultado por traspasos | Huecos |",
+             "|" + " --- |" * 11]
+    for result in results:
+        name = names.get(result.club_id, result.club_id)
+        if result.error:
+            lines.append(f"| {name} | {result.spec.currency} |" + " — |" * 8
+                         + f" error: {result.error} |")
+            continue
+        total = ("sí" if ok[result.club_id] else "**no**") + (
+            f", con {_value_raw(pending[result.club_id], result.spec.unit)} de partidas "
+            "pendientes" if pending[result.club_id] else "")
+        gaps = ", ".join(SHORT.get(concept, concept) + (" (dudosa)" if "dudosa" in reason
+                                                         else "")
+                         for concept, reason in result.gaps.items()
+                         if concept in (*mix.MIX, *PLAYER_CONCEPTS))
+        lines.append(f"| {name} | {result.spec.currency} | "
+                     + " | ".join(_cell(result, concept) for concept in mix.MIX)
+                     + f" | {total} | "
+                     + " | ".join(_cell(result, concept) for concept in PLAYER_CONCEPTS)
+                     + f" | {gaps or '—'} |")
+    return "\n".join(lines)
+
+
+def _cell(result: ClubResult, concept: str) -> str:
+    if concept in result.gaps:
+        return "hueco"
+    by_concept = {figure.concept: figure for figure in result.figures}
+    return _value(by_concept.get(concept), result.spec.unit)
+
+
+def _value_raw(value: float, unit: str) -> str:
+    if unit == "units":
+        value = float((Decimal(value) / 1000).quantize(Decimal(1), rounding=ROUND_HALF_UP))
+    return f"{value:,.0f}"
+
+
 def summary_note(result: ClubResult) -> str:
     if not result.summary:
         return "sin correcciones"
@@ -295,6 +438,7 @@ def _value(figure: Figure | None, unit: str) -> str:
     if figure is None:
         return "—"
     value = figure.value
+    unit = figure.unit or unit
     if unit == "units":
         value = int((Decimal(value) / 1000).quantize(Decimal(1), rounding=ROUND_HALF_UP))
     text = f"{value:,}" if value >= 0 else f"({-value:,})"

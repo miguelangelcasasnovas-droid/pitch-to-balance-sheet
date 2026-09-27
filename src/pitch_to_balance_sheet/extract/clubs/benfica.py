@@ -9,13 +9,20 @@ con punto de miles y negativos entre paréntesis. Páginas localizadas buscando 
   fijas y variables de los órganos sociales y del personal), así que sus filas se identifican
   por su orden, con anclas. Su total tiene que coincidir con la línea de la cuenta de
   resultados, cambiada de signo.
+Fase 3a:
+- las partidas de ingresos son las tres líneas de la cuenta (mapeo en config/line_items.yaml);
+- pág. 162, nota 20: "Resultado com alienações de direitos de atletas" (plusvalías menos
+  minusvalías y comisiones) y el resto hasta el resultado de transacciones de la cuenta;
+- pág. 165, nota 21: amortizaciones y pérdidas por deterioro de derechos de atletas.
 """
 
+from pitch_to_balance_sheet.extract import mix
 from pitch_to_balance_sheet.extract.statements import (
     ClubSpec,
     DocumentSpec,
     FigureSpec,
     Link,
+    LinkSum,
     Sum,
     TableSpec,
 )
@@ -57,6 +64,21 @@ STAFF_ANCHORS = {
     "other_staff_costs": r"^outros gastos com pessoal$",
     "staff_costs_total": r"^$",
 }
+TRANSACTION_ROWS = {
+    "gains": r"^ganhos com alienacoes de direitos de atletas \(mais-valias\)$",
+    "losses": r"^perdas com alienacoes de direitos de atletas \(menos-valias\)$",
+    "commissions": r"^gastos associados a alienacoes de direitos de atletas \(comissoes\)$",
+    "result_disposals": r"^resultado com alienacoes de direitos de atletas$",
+    "other_income": r"^outros rendimentos com transacoes de direitos de atletas$",
+    "write_offs": r"^abates de direitos de atletas$",
+    "other_costs": r"^outros gastos com transacoes de direitos de atletas$",
+    "result_transactions": r"^resultado com transacoes de direitos de atletas$",
+}
+AMORTISATION_ROWS = {
+    "amortisation": r"^amortizacoes de direitos de atletas$",
+    "impairment": r"^perdas de imparidade de direitos de atletas$",
+}
+MIX = mix.for_club("benfica")
 SEVERANCE_NOTE = (
     "Indemnizações (nota 18, pág. 159): una fila ordinaria dentro del total de personal, sin "
     "clasificar como excepcional. Informativa: no ajusta ninguna métrica."
@@ -100,9 +122,31 @@ SPEC = ClubSpec(
                 rows_by_order=STAFF_ORDER, anchors=STAFF_ANCHORS,
                 sums=(Sum("staff_costs_total", STAFF_ORDER[:-1]),),
             ),
+            TableSpec(
+                "transactions", 162, YEARS, TRANSACTION_ROWS, header=HEADER,
+                select=TRANSACTION_ROWS["other_income"],
+                sums=(Sum("result_disposals", ("gains", "losses", "commissions")),
+                      Sum("result_transactions", ("result_disposals", "other_income",
+                                                  "write_offs", "other_costs"))),
+            ),
+            TableSpec(
+                "amortisation", 165, YEARS, AMORTISATION_ROWS, header=HEADER,
+                select=AMORTISATION_ROWS["impairment"],
+                totals_after={"total": "impairment"},
+                sums=(Sum("total", tuple(AMORTISATION_ROWS)),),
+            ),
         ),
-        links=tuple(Link(("staff", "staff_costs_total", year), ("pnl", "staff", year), sign=-1)
-                    for year in YEARS),
+        links=(
+            *(Link(("staff", "staff_costs_total", year), ("pnl", "staff", year), sign=-1)
+              for year in YEARS),
+            *(LinkSum(("transactions", "result_transactions", year),
+                      (("pnl", "player_rights_income", year),
+                       ("pnl", "player_rights_expenses", year))) for year in YEARS),
+            *(Link(("amortisation", "total", year), ("pnl", "player_rights_amortisation", year),
+                   sign=-1) for year in YEARS),
+            MIX.check(),
+        ),
+        gaps=MIX.gaps(),
         figures=(
             FigureSpec("revenue_total_reported", (("pnl", "operating_revenue"),), "2025"),
             FigureSpec("revenue_ex_player_trading", (("pnl", "operating_revenue"),), "2025",
@@ -111,6 +155,14 @@ SPEC = ClubSpec(
             FigureSpec("staff_severance_disclosed", (("staff", "severance"),), "2025",
                        note=SEVERANCE_NOTE, included_in_staff_costs="true"),
             FigureSpec("net_result", (("pnl", "net_result"),), "2025"),
+            *MIX.figures("2025"),
+            FigureSpec("amortisation_player_registrations", (("amortisation", "amortisation"),),
+                       "2025", note="Amortizações de direitos de atletas (nota 21)."),
+            FigureSpec("impairment_player_registrations", (("amortisation", "impairment"),),
+                       "2025", note="Perdas de imparidade de direitos de atletas (nota 21)."),
+            FigureSpec("profit_on_player_disposals", (("transactions", "result_disposals"),),
+                       "2025", note="Resultado com alienações de direitos de atletas (nota 20): "
+                                    "plusvalías menos minusvalías y comisiones de venta."),
         ),
     ),
 )

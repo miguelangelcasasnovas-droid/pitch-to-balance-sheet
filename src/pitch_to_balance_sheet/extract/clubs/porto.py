@@ -13,6 +13,10 @@ miles, negativos entre paréntesis y la columna 30.06.2024 antes que la 30.06.20
   son totales sin rótulo.
 - pág. 154 (307), nota 27, Custos com pessoal, en positivo; su total tiene que coincidir con la
   línea de la cuenta, cambiada de signo.
+- pág. 152 (303), mitad derecha, nota 25: el detalle de las prestações de serviços, con el
+  subtotal de receitas desportivas y el total sin rótulo (mapeo en config/line_items.yaml).
+- pág. 156 (310), mitad izquierda, nota 28: amortizaciones, deterioro, ingresos y costes de
+  traspasos y "Mais-valias com alienações de passes de jogadores".
 - pág. 158 (315), nota 33, información por segmentos: el total de proveitos operacionais
   excluindo passes de jogadores con clientes externos, 149.540, es el de los ingresos (decisión
   del usuario del 27/09/2026). La cabecera "Outros serviços" ocupa dos líneas y la página no
@@ -24,6 +28,7 @@ variación y porcentaje, que se dejan fuera de la región:
 - pág. 5: desglose de los custos operacionais.
 """
 
+from pitch_to_balance_sheet.extract import mix
 from pitch_to_balance_sheet.extract.statements import (
     ClubSpec,
     Cross,
@@ -63,6 +68,30 @@ PNL_ROWS = {
     "attributable_nci": r"^interesses que nao controlam$",
 }
 REVENUE_ROWS = ("sales", "services", "other_income")
+SERVICES_ROWS = {
+    "uefa": r"^premios competicoes uefa$",
+    "fifa": r"^premios competicoes fifa$",
+    "tickets": r"^receita de bilheteira$",
+    "season_tickets": r"^receita de lugares anuais$",
+    "other_sports": r"^outras receitas desportivas$",
+    "advertising": r"^publicidade$",
+    "broadcasting": r"^direitos de transmissoes$",
+    "hospitality": r"^corporate hospitality$",
+    "other_services": r"^outras prestacoes de servicos$",
+}
+SPORTS_ROWS = ("uefa", "fifa", "tickets", "season_tickets", "other_sports")
+PLAYER_ROWS = {
+    "amortisation": r"^amortizacoes de passes de jogadores$",
+    "impairment": r"^perdas por imparidade com passes de jogadore ?s$",
+    "disposal_income": r"^proveitos com alienacoes de passes de jogadores \(i\)$",
+    "loan_income": r"^proveitos com emprestimos de jogadores$",
+    "other_income": r"^outros proveitos com jogadores$",
+    "disposal_costs": r"^custos com alienacoes de passes de jogadores \(ii\)$",
+    "loan_costs": r"^custos com emprestimos de jogadores$",
+    "other_costs": r"^outros custos com jogadores$",
+    "disposal_gains": r"^mais-valias com alienacoes de passes de jogadores \(nota$",
+}
+MIX = mix.for_club("porto")
 SEGMENT_COLUMNS = ("a", "b", "c", "other", "total")
 SEGMENT_ROWS = {
     "external": r"^resultantes de operacoes com clientes externos$",
@@ -184,6 +213,25 @@ SPEC = ClubSpec(
                 cross=(Cross("total", SEGMENT_COLUMNS[:-1], tuple(SEGMENT_ROWS)),),
             ),
             TableSpec(
+                "services", 152, YEARS, SERVICES_ROWS, region=RIGHT_HALF,
+                header=r"^30\.06\.202[45]$", select=SERVICES_ROWS["uefa"],
+                totals_after={"sports": "other_sports", "total": "other_services"},
+                sums=(Sum("sports", SPORTS_ROWS),
+                      Sum("total", ("sports", "advertising", "broadcasting", "hospitality",
+                                    "other_services"))),
+            ),
+            TableSpec(
+                "players", 156, YEARS, PLAYER_ROWS, region=(0.0, 0.0, 0.5, 0.6),
+                header=r"^30\.06\.202[45]$",
+                totals_after={"amortisation_total": "impairment", "income": "other_income",
+                              "costs": "other_costs", "result": "costs"},
+                sums=(Sum("amortisation_total", ("amortisation", "impairment")),
+                      Sum("income", ("disposal_income", "loan_income", "other_income")),
+                      Sum("costs", ("disposal_costs", "loan_costs", "other_costs")),
+                      Sum("result", ("amortisation_total", "income", "costs")),
+                      Sum("disposal_gains", ("disposal_income", "disposal_costs"))),
+            ),
+            TableSpec(
                 "staff", 154, YEARS, STAFF_ROWS, region=RIGHT_HALF, header=r"^30\.06\.202[45]$",
                 select=STAFF_ROWS["severance"],
                 totals_after={"staff_costs_total": "other"},
@@ -195,7 +243,14 @@ SPEC = ClubSpec(
               for year in YEARS),
             LinkSum(("segments", "external", "total"),
                     tuple(("pnl", row, "2025") for row in REVENUE_ROWS)),
+            *(Link(("services", "total", year), ("pnl", "services", year)) for year in YEARS),
+            *(Link(("players", key, year), ("pnl", line, year))
+              for key, line in (("amortisation_total", "player_amortisation"),
+                                ("income", "player_income"), ("costs", "player_costs"))
+              for year in YEARS),
+            MIX.check(),
         ),
+        gaps=MIX.gaps(),
         figures=(
             FigureSpec("revenue_total_reported", (Part("segments", "external", "total"),),
                        "2025", note=REVENUE_NOTE),
@@ -207,6 +262,16 @@ SPEC = ClubSpec(
             FigureSpec("net_result", (("pnl", "net_result"),), "2025", note=NET_NOTE),
             FigureSpec("net_result_attributable_parent", (("pnl", "attributable_parent"),),
                        "2025", note=ATTRIBUTABLE_NOTE),
+            *MIX.figures("2025"),
+            FigureSpec("amortisation_player_registrations", (("players", "amortisation"),),
+                       "2025", negate=True, note="Amortizações de passes de jogadores (nota 28)."),
+            FigureSpec("impairment_player_registrations", (("players", "impairment"),), "2025",
+                       negate=True,
+                       note="Perdas por imparidade com passes de jogadores (nota 28)."),
+            FigureSpec("profit_on_player_disposals", (("players", "disposal_gains"),), "2025",
+                       note="Mais-valias com alienações de passes de jogadores (nota 28): "
+                            "proveitos menos custos con alienações (i)+(ii). Fuera quedan "
+                            "cesiones y otros."),
         ),
     ),
     controls=(DocumentSpec(
@@ -256,7 +321,18 @@ SPEC = ClubSpec(
             FigureSpec("net_result_attributable_parent", (("results", "net_result_parent"),),
                        "2025"),
         ),
-        without={"staff_severance_disclosed": "el comunicado no desglosa los gastos de "
-                                              "personal"},
+        without={
+            "staff_severance_disclosed": "el comunicado no desglosa los gastos de personal",
+            mix.UNASSIGNED: "el comunicado agrupa los ingresos de otra forma (Publicidade "
+                            "incluye Corporate Hospitality); las partidas pendientes se comparan "
+                            "cuando estén decididas",
+            "amortisation_player_registrations": "el comunicado da amortización y deterioro "
+                                                 "juntos (34.377)",
+            "impairment_player_registrations": "el comunicado da amortización y deterioro "
+                                               "juntos (34.377)",
+            "profit_on_player_disposals": "el comunicado da el resultado con cedência de passes "
+                                          "(100.436), que incluye cesiones y otros, no las "
+                                          "mais-valias",
+        },
     ),),
 )

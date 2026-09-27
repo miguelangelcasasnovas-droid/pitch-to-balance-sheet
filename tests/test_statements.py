@@ -234,7 +234,9 @@ def test_las_especificaciones_de_los_clubes_se_cargan():
     assert SPECS["lazio"].primary.method == "ixbrl"
     assert SPECS["lazio"].primary.periods["2025"] == "2024-07-01/2025-06-30"
     assert SPECS["porto"].primary.tables[0].columns == ("2024", "2025")  # 2024 va antes
-    assert set(SPECS["porto"].controls[0].without) == {"staff_severance_disclosed"}
+    assert set(SPECS["porto"].controls[0].without) == {
+        "staff_severance_disclosed", "_revenue_unassigned", "amortisation_player_registrations",
+        "impairment_player_registrations", "profit_on_player_disposals"}
 
 
 def test_included_in_staff_costs_solo_admite_true_false_o_dudoso():
@@ -361,3 +363,73 @@ def test_fila_que_va_justo_despues_de_su_ancla():
     assert row.amounts[0].value == 10
     with pytest.raises(ExtractionError, match="aparece 2 veces"):
         row_after(table, r"attributable to$", r"owners of the parent$", "parent", 1)
+
+
+def test_una_parte_con_menos_se_resta_y_el_bloque_elige_sus_filas():
+    from pitch_to_balance_sheet.extract.statements import LoadedTable, _checks, block_rows
+    from pitch_to_balance_sheet.extract.tables import read_tables
+
+    rows = [_row(0, ("2025", 400, 450)),
+            _row(30, ("Cost", 0, 40)),
+            _row(60, ("At", 0, 20), ("1", 25, 30), ("July", 35, 70), ("50", 430, 450)),
+            _row(90, ("Amortisation", 0, 90)),
+            _row(120, ("At", 0, 20), ("1", 25, 30), ("July", 35, 70), ("20", 430, 450)),
+            _row(150, ("Charge", 0, 60), ("7", 440, 450)),
+            _row(180, ("Disposals", 0, 70), ("2", 440, 450)),
+            _row(210, ("At", 0, 20), ("30", 25, 40), ("June", 45, 80), ("25", 430, 450)),
+            _row(240, ("Net", 0, 30), ("book", 35, 70), ("value", 75, 110))]
+    table = read_tables(rows, r"^2025$")[0]
+    with pytest.raises(ExtractionError, match="aparece 2 veces"):
+        block_rows(table, (r"^at 1 july$", r"^at 30 june$"), 1)
+    block = block_rows(table, (r"^amortisation$", r"^at 30 june$"), 1)
+    assert [row.label for row in block.rows] == ["amortisation", "at 1 july", "charge",
+                                                 "disposals", "at 30 june"]
+    spec = TableSpec("fund", 1, ("2025",), {}, sums=(
+        Sum("closing", ("opening", "charge", "-disposals")),))
+    found = {key: block.rows[index] for key, index in
+             (("opening", 1), ("charge", 2), ("disposals", 3), ("closing", 4))}
+    (check,) = _checks("x", {"fund": LoadedTable(spec, block, found, None)}, ())
+    assert (check.relation, check.reported, check.computed) == (
+        "closing = opening + charge − disposals", 25, 25)
+
+
+def test_link_sum_con_signo():
+    from pitch_to_balance_sheet.extract.statements import LinkSum, LoadedTable, _checks
+    from pitch_to_balance_sheet.extract.tables import read_tables
+
+    rows = [_row(0, ("2025", 400, 450)), _row(30, ("Amortisation", 0, 90), ("(99,868)", 390, 450)),
+            _row(60, ("Charge", 0, 60), ("99,502", 400, 450)),
+            _row(90, ("Impairment", 0, 80), ("366", 420, 450))]
+    table = read_tables(rows, r"^2025$")[0]
+    found = dict(zip(("pnl", "charge", "impairment"), table.rows, strict=True))
+    loaded = {"t": LoadedTable(TableSpec("t", 1, ("2025",), {}), table, found, None)}
+    (check,) = _checks("x", loaded, (LinkSum(("t", "pnl", "2025"), (
+        ("t", "charge", "2025"), ("t", "impairment", "2025")), sign=-1),))
+    assert check.ok and check.relation == "t.pnl.2025 = -(t.charge.2025 + t.impairment.2025)"
+
+
+def test_la_cabecera_espaciada_letra_a_letra_se_une():
+    from pitch_to_balance_sheet.extract.tables import read_tables
+
+    rows = [_row(0, ("2", 100, 110), ("0", 110, 120), ("2", 120, 130), ("5", 130, 140),
+                  ("2", 300, 310), ("0", 310, 320), ("2", 320, 330), ("4", 330, 340)),
+            _row(30, ("Revenue", 0, 70), ("10", 120, 140), ("9", 330, 340))]
+    (table,) = read_tables(rows, r"^\d{4}$")
+    assert table.header_raw == ("2025", "2024")
+    assert {k: a.value for k, a in table.rows[0].amounts.items()} == {0: 10, 1: 9}
+
+
+def test_nil_en_una_frase_es_cero():
+    rows = _sentence_rows("capitalised player registrations were impaired by Enil (2024: one)")
+    spec = _sentence(concept="impairment_player_registrations",
+                     pattern=r"were impaired by \S?(?P<amount>nil) \(2024")
+    amount, _ = sentence_amount(rows, spec, ",")
+    assert amount.value == 0 and "nil" in amount.fixes[0]
+
+
+def test_un_concepto_no_puede_ser_hueco_y_cifra(tmp_path):
+    figures = FIGURES
+    spec_ = DocumentSpec(method="text", tables=spec().tables, figures=figures,
+                         unit_evidence=THOUSANDS_EVIDENCE, gaps={"net_result": "no se publica"})
+    with pytest.raises(ExtractionError, match="hueco y cifra a la vez"):
+        read_document("principal", spec_, TABLE, "fixture", tmp_path)

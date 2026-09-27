@@ -7,7 +7,8 @@ multiplicado por 10^scale y con el signo de sign="-". De cada hecho se guardan t
 página del XHTML y la fila de la tabla donde está, para citarlo.
 
 Del mismo paquete lee el linkbase de cálculo (*_cal.xml): el peso (+1 o -1) de cada partida en
-su subtotal, tal como lo declara el emisor.
+su subtotal, tal como lo declara el emisor. Y las tablas del XHTML, página a página, con el texto
+de cada celda: las notas que no están etiquetadas se leen de ahí, citadas por página y fila.
 
 Un formato de número que no se conoce, un hecho sin contexto o sin unidad, o dos hechos del
 mismo concepto y contexto con valores distintos son un error: nunca se adivina.
@@ -16,7 +17,7 @@ mismo concepto y contexto con valores distintos son un error: nunca se adivina.
 import re
 import unicodedata
 import zipfile
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from xml.etree import ElementTree as ET
@@ -77,11 +78,21 @@ class Fact:
 
 
 @dataclass(frozen=True)
+class XhtmlRow:
+    """Una fila de una tabla del XHTML: el texto de cada celda y la fila en XHTML."""
+
+    cells: tuple[str, ...]
+    html: str
+
+
+@dataclass(frozen=True)
 class Report:
     name: str  # ruta del informe dentro del ZIP
     facts: tuple[Fact, ...]
     # (subtotal, partida) -> peso, del linkbase de cálculo; conceptos con concept_key.
     calculations: dict[tuple[str, str], Decimal]
+    # página -> tablas de esa página, cada una con sus filas
+    tables: dict[int, tuple[tuple[XhtmlRow, ...], ...]] = field(default_factory=dict)
 
     def find(self, concept: str, entity: str, period: str,
              dimensions: tuple[tuple[str, str], ...] = ()) -> Fact:
@@ -191,6 +202,26 @@ def _label(row: ET.Element | None) -> str:
     return _text(cells[0]) if cells else ""
 
 
+def _tables(root: ET.Element) -> dict[int, tuple[tuple[XhtmlRow, ...], ...]]:
+    """Las tablas de cada página del XHTML (el bloque más externo con número de página)."""
+    pages: dict[int, list[tuple[XhtmlRow, ...]]] = {}
+    stack = [root]
+    while stack:
+        element = stack.pop()
+        match = PAGE_ID.search(element.get("id") or "") if element.tag == XHTML + "div" else None
+        if not match:
+            stack.extend(reversed(element))
+            continue
+        for table in element.iter(XHTML + "table"):
+            rows = tuple(
+                XhtmlRow(tuple(_text(cell) for cell in row
+                               if cell.tag in (XHTML + "td", XHTML + "th")),
+                         ET.tostring(row, encoding="unicode"))
+                for row in table.iter(XHTML + "tr"))
+            pages.setdefault(int(match.group(1)), []).append(rows)
+    return {page: tuple(tables) for page, tables in pages.items()}
+
+
 def _calculations(package: zipfile.ZipFile) -> dict[tuple[str, str], Decimal]:
     weights: dict[tuple[str, str], Decimal] = {}
     for name in package.namelist():
@@ -244,4 +275,4 @@ def read_report(path: Path) -> Report:
             element.get("decimals", ""), scale, sign, element.get("format", ""), raw,
             -value if sign == "-" else value, page, _label(row),
             ET.tostring(row, encoding="unicode") if row is not None else ""))
-    return Report(reports[0], tuple(facts), calculations)
+    return Report(reports[0], tuple(facts), calculations, _tables(root))

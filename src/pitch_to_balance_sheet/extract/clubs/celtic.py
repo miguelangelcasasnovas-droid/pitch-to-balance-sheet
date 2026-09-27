@@ -8,6 +8,7 @@ tabla se lee en su mitad. Páginas localizadas buscando los títulos en el texto
   trabajo (staff_costs_exceptional). Su total tiene que coincidir con la línea de la cuenta.
 """
 
+from pitch_to_balance_sheet.extract import mix
 from pitch_to_balance_sheet.extract.statements import (
     ClubSpec,
     DocumentSpec,
@@ -18,6 +19,7 @@ from pitch_to_balance_sheet.extract.statements import (
 )
 
 LEFT_HALF = (0.0, 0.0, 0.5, 1.0)
+RIGHT_HALF = (0.5, 0.0, 1.0, 1.0)
 COLUMNS = ("2025", "2024")
 PNL_ROWS = {
     "revenue": r"^revenue$",
@@ -51,6 +53,22 @@ STAFF_ROWS = {
     "other_pension_costs": r"^other pension costs$",
 }
 
+REVENUE_ROWS = {
+    "ticketing": r"^ticketing$",
+    "commercial_sponsorship": r"^commercial/sponsorship$",
+    "retail": r"^retail outlets and e-commerce$",
+    "media": r"^media rights$",
+    "stadium": r"^stadium operations$",
+    "other": r"^other$",
+}
+INTANGIBLE_ROWS = {
+    "opening": r"^at 1 july$",
+    "charge": r"^charge for year$",
+    "impairment": r"^provision for impairment$",
+    "disposals": r"^disposals$",
+    "closing": r"^at 30 june$",
+}
+MIX = mix.for_club("celtic")
 REVENUE_EX_NOTE = (
     "La nota 5 (pág. 32) desglosa los ingresos en football and stadium operations, "
     "merchandising y multimedia and other commercial activities: no hay traspasos ni "
@@ -90,9 +108,27 @@ SPEC = ClubSpec(
                 totals_after={"staff_costs_total": "other_pension_costs"},
                 sums=(Sum("staff_costs_total", tuple(STAFF_ROWS)),),
             ),
+            TableSpec(
+                "revenue", 32, COLUMNS, REVENUE_ROWS, region=LEFT_HALF, select=r"^ticketing$",
+                totals_after={"total": "other"},
+                sums=(Sum("total", tuple(REVENUE_ROWS)),),
+            ),
+            TableSpec(
+                # Nota 17, bloque de amortización: los intangibles son derechos de jugadores.
+                "intangibles", 35, COLUMNS, INTANGIBLE_ROWS, region=RIGHT_HALF,
+                select=INTANGIBLE_ROWS["charge"], block=(r"^amortisation$", r"^at 30 june$"),
+                sums=(Sum("closing", ("opening", "charge", "impairment", "disposals")),),
+            ),
         ),
-        links=tuple(Link(("exceptional", "exceptional_total", year),
-                         ("pnl", "exceptional_items", year)) for year in COLUMNS),
+        links=(
+            *(Link(("exceptional", "exceptional_total", year), ("pnl", "exceptional_items", year))
+              for year in COLUMNS),
+            *(Link(("revenue", "total", year), ("pnl", "revenue", year)) for year in COLUMNS),
+            *(Link(("intangibles", "charge", year), ("pnl", "amortisation", year), sign=-1)
+              for year in COLUMNS),
+            MIX.check(),
+        ),
+        gaps=MIX.gaps(),
         figures=(
             FigureSpec("revenue_total_reported", (("pnl", "revenue"),), "2025"),
             FigureSpec("revenue_ex_player_trading", (("pnl", "revenue"),), "2025",
@@ -102,6 +138,16 @@ SPEC = ClubSpec(
                        "2025", note=EXCEPTIONAL_NOTE, negate=True,
                        included_in_staff_costs="dudoso"),
             FigureSpec("net_result", (("pnl", "net_result"),), "2025"),
+            *MIX.figures("2025"),
+            FigureSpec("amortisation_player_registrations", (("intangibles", "charge"),), "2025",
+                       note="Charge for year de la nota 17 (intangibles: derechos de jugadores)."),
+            FigureSpec("impairment_player_registrations", (("intangibles", "impairment"),),
+                       "2025", note="Provision for impairment de la nota 17: la parte de "
+                                   "jugadores de los 2,004 de la nota 8; el resto son otros "
+                                   "gastos anticipados."),
+            FigureSpec("profit_on_player_disposals", (("pnl", "profit_disposal_intangibles"),),
+                       "2025", note="Profit on disposal of intangible assets: los intangibles "
+                                    "son derechos de jugadores (nota 17)."),
         ),
     ),
 )

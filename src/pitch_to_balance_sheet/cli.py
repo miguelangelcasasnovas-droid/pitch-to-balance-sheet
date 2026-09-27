@@ -250,7 +250,8 @@ def extract(season: str, club_id: str | None, reocr: bool = False) -> int:
         results.append(result)
         print(f"\n== {spec.club_id} · {result.source or '—'} · {result.pdf or '—'}")
         for figure in result.figures:
-            print(f"  {figure.concept}: {figure.value:,} ({spec.unit}, {spec.currency})"
+            print(f"  {figure.concept}: {figure.value:,} ({figure.unit or spec.unit}, "
+                  f"{spec.currency})"
                   + (" · derivada" if figure.is_derived else "")
                   + f" · {figure.sources} · {figure.ocr_note}"
                   + (f" · {result.crops[figure.concept]}" if figure.concept in result.crops
@@ -284,10 +285,21 @@ def extract(season: str, club_id: str | None, reocr: bool = False) -> int:
             print(f"error: {spec.club_id}: {result.error}", file=sys.stderr)
     written = run.write_outputs(season, results)
     print("\n" + run.table(results))
+    # Reparto de ingresos (fase 3a), validado con pandera. Un club sin sus partidas en
+    # config/line_items.yaml es un error.
+    try:
+        frame = run.mix_frame(results)
+    except ValueError as exc:
+        print(f"error: reparto de ingresos: {exc}", file=sys.stderr)
+        return 1
+    problems = run.validate_mix(frame)
+    print("\n" + run.mix_table(results, frame))
+    for problem in problems:
+        print(f"error: reparto de ingresos (pandera): {problem}", file=sys.stderr)
     for path in written:
         print(f"\n{path}", end="")
     print()
-    return 1 if any(result.error for result in results) else 0
+    return 1 if problems or any(result.error for result in results) else 0
 
 
 def main(argv: list[str] | None = None) -> int:

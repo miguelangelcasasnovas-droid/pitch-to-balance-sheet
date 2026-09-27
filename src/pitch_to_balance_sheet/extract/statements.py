@@ -34,6 +34,7 @@ from pitch_to_balance_sheet.extract.tables import (
     TableRow,
     group_rows,
     in_region,
+    normalize_label,
     parse_amount,
     read_tables,
 )
@@ -49,7 +50,8 @@ class ExtractionError(RuntimeError):
 
 @dataclass(frozen=True)
 class Sum:
-    """total = suma de las partes, en las columnas indicadas (todas si no se indican)."""
+    """total = suma de las partes, en las columnas indicadas (todas si no se indican). Una parte
+    con "-" delante se resta, p. ej. las bajas en un cuadro de movimientos."""
 
     total: str
     parts: tuple[str, ...]
@@ -85,6 +87,7 @@ class LinkSum:
 
     total: tuple[str, str, str]  # tabla, fila, columna
     parts: tuple[tuple[str, str, str], ...]
+    sign: int = 1  # -1 si el total va en negativo y las partes en positivo
 
 
 @dataclass(frozen=True)
@@ -103,6 +106,11 @@ class TableSpec:
     # Filas con un rótulo que se repite en la página: clave -> patrón de la fila que va justo
     # antes (p. ej. "- Owners of the parent:" después de "... attributable to:").
     after: dict[str, str] = field(default_factory=dict)
+    # Solo las filas de un bloque: desde la fila que casa con el primer patrón hasta la primera
+    # que casa con el segundo, las dos incluidas. Para cuadros de movimientos con un bloque por
+    # año ("Year ended 30 June 2025" ... "Closing book amount"). Varios tramos se aplican uno
+    # dentro de otro.
+    block: tuple | None = None
     select: str | None = None  # patrón de una fila que identifica la tabla en la página
     header_label: str | None = None  # patrón del resto de la fila de cabecera (p. ej. ^group$)
     region: tuple[float, float, float, float] = (0.0, 0.0, 1.0, 1.0)
@@ -136,6 +144,8 @@ class FigureSpec:
     # presentación, no una cifra derivada.
     negate: bool = False
     included_in_staff_costs: str = ""
+    # Unidad de la cifra si no es la del club (p. ej. una nota en miles en un iXBRL en euros).
+    unit: str | None = None
 
     def __post_init__(self):
         _check_included(self.concept, self.included_in_staff_costs)
@@ -193,6 +203,25 @@ class DocumentSpec:
     sentences: tuple[SentenceFigureSpec, ...] = ()
     # Solo en controles: conceptos de la fuente que este documento no trae, con el motivo.
     without: dict[str, str] = field(default_factory=dict)
+    # Conceptos que el club no publica: hueco, con el motivo.
+    gaps: dict[str, str] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class XhtmlTableSpec:
+    """Una tabla sin etiquetar del XHTML de un paquete ESEF (p. ej. una nota): se lee celda a
+    celda y se cita por página y fila, como en un PDF."""
+
+    name: str
+    page: int
+    columns: tuple[str, ...]
+    cells: tuple[int, ...]  # índice de la celda de cada columna en la fila
+    rows: dict[str, str]  # clave -> patrón del rótulo normalizado (la primera celda)
+    select: str  # patrón de una fila que identifica la tabla en la página
+    after: dict[str, str] = field(default_factory=dict)  # como en TableSpec
+    block: tuple | None = None  # como en TableSpec
+    sums: tuple[Sum, ...] = ()
+    thousands: str = "."
 
 
 @dataclass(frozen=True)
@@ -222,6 +251,9 @@ class IxbrlDocumentSpec:
     pending: str | None = None
     sentences: tuple[SentenceFigureSpec, ...] = ()
     without: dict[str, str] = field(default_factory=dict)
+    gaps: dict[str, str] = field(default_factory=dict)
+    tables: tuple[XhtmlTableSpec, ...] = ()  # notas sin etiquetar; partes: (tabla, fila)
+    links: tuple[Link | LinkSum, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -292,6 +324,7 @@ class Figure:
     note: str
     negated: bool = False
     included_in_staff_costs: str = ""
+    unit: str | None = None  # si no es la del club
 
     @property
     def is_derived(self) -> bool:
@@ -335,6 +368,7 @@ class DocumentResult:
     checks: list[Check]
     corrections: list[str]
     summary: dict[str, int]  # recuento de correcciones por tipo, para las notas de OCR
+    gaps: dict[str, str] = field(default_factory=dict)  # concepto -> motivo
 
 
 @dataclass
@@ -342,7 +376,7 @@ class LoadedTable:
     spec: TableSpec
     table: Table
     rows: dict[str, TableRow]
-    image_path: Path
+    image_path: Path | None
 
 
 def ocr_note(amounts: tuple[Amount, ...], method: str) -> str:
@@ -369,7 +403,9 @@ def sentence_amount(rows: list[Row], spec: SentenceFigureSpec,
                               f"aparece {len(matches)} veces")
     row, match = matches[0]
     raw = match.group("amount")
-    ocr_read = parse_amount(raw.lstrip("£€$"), thousands)
+    # "£nil" en el texto: el informe dice que es cero.
+    ocr_read = (Amount(0, raw, ("«nil» en el texto: cero",)) if raw.strip().lower() == "nil"
+                else parse_amount(raw.lstrip("£€$"), thousands))
     if spec.image_reading is None:
         read = ocr_read
         if read is None or read.dash:
@@ -426,6 +462,25 @@ def rows_by_order(table: Table, keys: tuple[str, ...], anchors: dict[str, str],
     return found
 
 
+def block_rows(table: Table, block: tuple | None, page: int) -> Table:
+    """La tabla reducida a las filas de un bloque (ver TableSpec.block)."""
+    if block is None:
+        return table
+    for start, end in ((block,) if isinstance(block[0], str) else block):
+        starts = [index for index, row in enumerate(table.rows) if re.search(start, row.label)]
+        if len(starts) != 1:
+            raise ExtractionError(f"pág. {page}: el inicio del bloque ({start}) aparece "
+                                  f"{len(starts)} veces")
+        ends = [index for index, row in enumerate(table.rows)
+                if index > starts[0] and re.search(end, row.label)]
+        if not ends:
+            raise ExtractionError(f"pág. {page}: el bloque que empieza en {start} no acaba en "
+                                  f"{end}")
+        table = Table(table.header_raw, table.column_x2, table.rows[starts[0]:ends[0] + 1],
+                      table.header_label)
+    return table
+
+
 def row_after(table: Table, anchor: str, pattern: str, key: str, page: int) -> TableRow:
     """La fila que va justo después de la fila ancla, para rótulos que se repiten."""
     anchors = [index for index, row in enumerate(table.rows) if re.search(anchor, row.label)]
@@ -467,13 +522,19 @@ def _checks(document: str, loaded: dict[str, LoadedTable], links: tuple[Link, ..
     for name, item in loaded.items():
         page = item.spec.page
         for rule in item.spec.sums:
+            signs = [-1 if key.startswith("-") else 1 for key in rule.parts]
+            keys = [key.removeprefix("-") for key in rule.parts]
+            relation = f"{rule.total} = " + "".join(
+                ("− " if sign < 0 else "") + key if index == 0
+                else (" − " if sign < 0 else " + ") + key
+                for index, (sign, key) in enumerate(zip(signs, keys, strict=True)))
             for column in rule.columns or item.spec.columns:
-                cells = tuple((name, key, column) for key in (rule.total, *rule.parts))
+                cells = tuple((name, key, column) for key in (rule.total, *keys))
                 checks.append(Check(
-                    document, page, f"{rule.total} = " + " + ".join(rule.parts), column,
-                    _amount(loaded, cells[0]).value,
-                    sum(_amount(loaded, cell).value for cell in cells[1:]), cells,
-                    len(rule.parts)))
+                    document, page, relation, column, _amount(loaded, cells[0]).value,
+                    sum(sign * _amount(loaded, cell).value
+                        for sign, cell in zip(signs, cells[1:], strict=True)),
+                    cells, len(rule.parts)))
         for rule in item.spec.cross:
             for key in rule.rows:
                 cells = tuple((name, key, column) for column in (rule.total, *rule.parts))
@@ -484,11 +545,12 @@ def _checks(document: str, loaded: dict[str, LoadedTable], links: tuple[Link, ..
                     len(rule.parts)))
     for link in links:
         if isinstance(link, LinkSum):
+            parts = " + ".join('.'.join(p) for p in link.parts)
             checks.append(Check(
                 document, loaded[link.total[0]].spec.page,
-                f"{'.'.join(link.total)} = " + " + ".join('.'.join(p) for p in link.parts),
+                f"{'.'.join(link.total)} = " + (f"-({parts})" if link.sign < 0 else parts),
                 link.total[2], _amount(loaded, link.total).value,
-                sum(_amount(loaded, part).value for part in link.parts),
+                link.sign * sum(_amount(loaded, part).value for part in link.parts),
                 (link.total, *link.parts), len(link.parts)))
             continue
         checks.append(Check(
@@ -588,11 +650,24 @@ def read_ixbrl_document(name: str, spec: IxbrlDocumentSpec, path: Path) -> Docum
             checks.append(Check(name, total.page, relation, column, _exact(total.value),
                                 _exact(computed), cells, len(calc.parts)))
 
+    loaded = {table_spec.name: _xhtml_table(report, table_spec) for table_spec in spec.tables}
+    checks += _checks(name, loaded, spec.links)
+
     figures = []
     for figure_spec in spec.figures:
         components = []
         for part in figure_spec.resolved():
             column = part.column or figure_spec.column
+            if part.table != "ixbrl":  # nota sin etiquetar
+                item = loaded[part.table]
+                row = item.rows[part.row]
+                amount = _amount(loaded, (part.table, part.row, column))
+                components.append(Component(
+                    item.spec.page, row.raw_label, column, part.sign,
+                    Amount(amount.value, amount.raw,
+                           ("celda de una tabla sin etiquetar del XHTML", *amount.fixes)),
+                    row.row, None, reference=f"tabla sin etiquetar del XHTML, columna {column}"))
+                continue
             fact = facts[(part.row, column)]
             value = _exact(fact.value)
             scale_note = (f"{fact.unit} con scale {fact.scale} y decimals {fact.decimals}: "
@@ -603,12 +678,52 @@ def read_ixbrl_document(name: str, spec: IxbrlDocumentSpec, path: Path) -> Docum
                 fact, None,
                 reference=f"{fact.concept} [contexto {fact.context.id}, {period}, sin "
                           f"dimensiones; hecho {fact.id}]"))
+        if len({isinstance(c.row, ixbrl.Fact) for c in components}) > 1:
+            raise ExtractionError(f"{figure_spec.concept} mezcla hechos etiquetados y celdas de "
+                                  "notas sin etiquetar, que van en otra unidad")
         value = sum(c.sign * c.amount.value for c in components)
         figures.append(Figure(
             figure_spec.concept, figure_spec.column, -value if figure_spec.negate else value,
             tuple(components), "ixbrl", figure_spec.note, figure_spec.negate,
-            figure_spec.included_in_staff_costs))
-    return DocumentResult(name, figures, checks, [], {})
+            figure_spec.included_in_staff_costs, figure_spec.unit))
+    return DocumentResult(name, figures, checks, [], {}, _gaps(spec, figures))
+
+
+def _gaps(spec, figures: list[Figure]) -> dict[str, str]:
+    """Los huecos del documento: un concepto no puede ser a la vez hueco y cifra."""
+    both = set(spec.gaps) & {figure.concept for figure in figures}
+    if both:
+        raise ExtractionError(f"{', '.join(sorted(both))}: hueco y cifra a la vez")
+    return dict(spec.gaps)
+
+
+def _xhtml_table(report: ixbrl.Report, spec: XhtmlTableSpec) -> LoadedTable:
+    """Una tabla sin etiquetar del XHTML como tabla del motor: primera celda = rótulo."""
+    candidates = [rows for rows in report.tables.get(spec.page, ())
+                  if any(row.cells and re.search(spec.select, normalize_label(row.cells[0]))
+                         for row in rows)]
+    if len(candidates) != 1:
+        raise ExtractionError(f"pág. {spec.page} del XHTML: se esperaba una tabla {spec.name} "
+                              f"({spec.select}) y hay {len(candidates)}")
+    table_rows = []
+    for row in candidates[0]:
+        if not row.cells:
+            continue
+        amounts = {}
+        for index, cell in enumerate(spec.cells):
+            text = row.cells[cell] if cell < len(row.cells) else ""
+            amount = parse_amount(text, spec.thousands) if text.strip() else None
+            if amount is not None:
+                amounts[index] = amount
+        table_rows.append(TableRow(normalize_label(row.cells[0]), row.cells[0], None, amounts,
+                                   row.html))
+    table = block_rows(Table((), (), table_rows), spec.block, spec.page)
+    rows = find_rows(table, {key: pattern for key, pattern in spec.rows.items()
+                             if key not in spec.after}, spec.page)
+    for key, anchor in spec.after.items():
+        rows[key] = row_after(table, anchor, spec.rows[key], key, spec.page)
+    table_spec = TableSpec(spec.name, spec.page, spec.columns, spec.rows, sums=spec.sums)
+    return LoadedTable(table_spec, table, rows, None)
 
 
 def read_document(name: str, spec: DocumentSpec, pdf_path: Path, sha256: str,
@@ -643,9 +758,9 @@ def read_document(name: str, spec: DocumentSpec, pdf_path: Path, sha256: str,
             if len(candidates) != 1:
                 raise ExtractionError(
                     f"pág. {page}: se esperaba una tabla {table_spec.name} de "
-                    f"{len(table_spec.columns)} columnas y hay {len(candidates)}"
+                    f"{len(table_spec.columns)} columnas y hay {len(candidates)} tablas así"
                 )
-            table = candidates[0]
+            table = block_rows(candidates[0], table_spec.block, page)
             rows = find_rows(table, {key: pattern for key, pattern in table_spec.rows.items()
                                      if key not in table_spec.after}, page)
             for key, anchor in table_spec.after.items():
@@ -692,7 +807,7 @@ def read_document(name: str, spec: DocumentSpec, pdf_path: Path, sha256: str,
         figures.append(Figure(
             figure_spec.concept, figure_spec.column, -value if figure_spec.negate else value,
             tuple(components), spec.method, figure_spec.note, figure_spec.negate,
-            figure_spec.included_in_staff_costs))
+            figure_spec.included_in_staff_costs, figure_spec.unit))
 
     covered = {cell for check in checks if check.ok for cell in check.cells}
     used = {cell for check in checks for cell in check.cells} | figure_cells
@@ -722,4 +837,4 @@ def read_document(name: str, spec: DocumentSpec, pdf_path: Path, sha256: str,
         if amount.fixes:
             notes.append(f"pág. {sentence.page} {sentence.concept}: {amount.raw!r} -> "
                          f"{amount.value:,} ({'; '.join(amount.fixes)})")
-    return DocumentResult(name, figures, checks, notes, summary)
+    return DocumentResult(name, figures, checks, notes, summary, _gaps(spec, figures))

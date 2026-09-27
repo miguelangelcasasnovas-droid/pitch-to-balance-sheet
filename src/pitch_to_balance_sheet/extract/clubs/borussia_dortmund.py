@@ -16,19 +16,41 @@ pdfplumber, y la misma paginación en las dos versiones:
 El resultado atribuible a la matriz ("- Eigenkapitalgebern der Muttergesellschaft:") aparece dos
 veces en la pág. 126, para el resultado neto y para el global: se toma la fila que va justo
 después de "vom Konzernjahresüberschuss zuzurechnen:".
+
+Fase 3a, en los dos idiomas:
+- pág. 160, notas 16 (Umsatzerlöse / Revenue, partidas de ingresos; mapeo en
+  config/line_items.yaml) y 17 (Ergebnis aus Transfergeschäften / Net transfer income).
+- pág. 150, cuadro de intangibles: el bloque de amortizaciones de 2024/25, columna Spielerwerte.
+- pág. 155, nota 8, en una frase: las außerplanmäßige Wertminderungen / impairment losses de
+  los jugadores reclasificados como mantenidos para la venta, que van dentro de las
+  amortizaciones de la cuenta.
 """
 
+from pitch_to_balance_sheet.extract import mix
 from pitch_to_balance_sheet.extract.statements import (
     ClubSpec,
+    Cross,
     DocumentSpec,
     FigureSpec,
     Link,
+    SentenceFigureSpec,
     Sum,
     TableSpec,
 )
 
 YEARS = ("2025", "2024")
 HEADER = r"^\d{4}/\d{4}$"
+MIX = mix.for_club("borussia_dortmund")
+DISPOSALS_NOTE = (
+    "Ergebnis aus Transfergeschäften (nota 17): Brutto-Transferentgelt menos Transferkosten y "
+    "Restbuchwerte. Es la línea de la cuenta de resultados."
+)
+IMPAIRMENT_NOTE = (
+    "Nota 8 (pág. 155): außerplanmäßige Wertminderungen de los intangibles reclasificados como "
+    "mantenidos para la venta (jugadores que se van a traspasar), incluidas en las "
+    "amortizaciones de la cuenta. Cuadra: 85.396 + 145 + 7.000 = 92.541, frente a los 92.542 de "
+    "amortización de intangibles de la nota 21."
+)
 ATTRIBUTABLE_NOTE = (
     "vom Konzernjahresüberschuss zuzurechnen: Eigenkapitalgebern der Muttergesellschaft (pág. "
     "126): todo el resultado; no hay minoritarios. Informativa."
@@ -71,6 +93,34 @@ def document(language: str, control_index: int | None) -> DocumentSpec:
     }
     attributable_anchor = (r"^vom konzernjahresuberschuss zuzurechnen$" if german
                            else r"^consolidated net profit for the year attributable to$")
+    revenue_rows = {
+        "match_operations": r"^spielbetrieb$" if german else r"^match operations$",
+        "advertising": r"^werbung$" if german else r"^advertising$",
+        "tv": r"^tv-vermarktung$" if german else r"^tv marketing$",
+        "merchandising": r"^merchandising$",
+        "conference": (r"^conference, catering, sonstige$" if german
+                       else r"^conference, catering, miscellaneous$"),
+    }
+    transfer_rows = {
+        "gross": r"^brutto-transferentgelt$" if german else r"^gross transfer proceeds$",
+        "costs": r"^transferkosten$" if german else r"^transfer costs$",
+        "net": r"^netto-transferentgelt$" if german else r"^net transfer proceeds$",
+        "carrying_amounts": (r"^restbuchwerte und sonstige ausbuchungen$" if german
+                             else r"^residual carrying amounts and other derecognised items$"),
+        "result": r"^ergebnis aus transfergeschaften$" if german else r"^net transfer income$",
+    }
+    intangible_rows = {
+        "opening": r"^stand 30. juni 2024$" if german else r"^as at 30 june 2024$",
+        "additions": r"^zugange$" if german else r"^additions$",
+        "disposals": r"^abgange$" if german else r"^disposals$",
+        "reclassification": (r"^umgliederung in als zur verausserung gehaltene vermogenswerte$"
+                             if german else r"^reclassification to assets held for sale$"),
+        "closing": r"^stand 30. juni 2025$" if german else r"^as at 30 june 2025$",
+    }
+    amortisation_block = ((r"^abschreibungen$" if german
+                           else r"^depreciation, amortisation and write-downs$",
+                           intangible_rows["closing"]),
+                          (intangible_rows["opening"], intangible_rows["closing"]))
     staff_rows = {
         "wages_and_salaries": r"^lohne und gehalter$" if german else r"^wages and salaries$",
         "social_security": (r"^sozialversicherungsabgaben$" if german
@@ -102,9 +152,45 @@ def document(language: str, control_index: int | None) -> DocumentSpec:
                 totals_after={"staff_costs_total": "social_security"},
                 sums=(Sum("staff_costs_total", tuple(staff_rows)),),
             ),
+            TableSpec(
+                "revenue", 160, YEARS, revenue_rows, header=HEADER,
+                select=revenue_rows["match_operations"],
+                totals_after={"total": "conference"},
+                sums=(Sum("total", tuple(revenue_rows)),),
+            ),
+            TableSpec(
+                "transfers", 160, YEARS, transfer_rows, header=HEADER,
+                select=transfer_rows["gross"],
+                sums=(Sum("net", ("gross", "costs")), Sum("result", ("net", "carrying_amounts"))),
+            ),
+            TableSpec(
+                "intangibles", 150, ("players", "rights", "total"), intangible_rows,
+                header=(r"^(Spielerwerte|Rechte|Summe)$" if german
+                        else r"^(registrations|rights|Total)$"),
+                block=amortisation_block,
+                sums=(Sum("closing", ("opening", "additions", "-disposals",
+                                      "reclassification")),),
+                cross=(Cross("total", ("players", "rights"), tuple(intangible_rows)),),
+            ),
         ),
-        links=tuple(Link(("staff", "staff_costs_total", year), ("pnl", "personnel_expenses", year),
-                         sign=-1) for year in YEARS),
+        links=(
+            *(Link(("staff", "staff_costs_total", year), ("pnl", "personnel_expenses", year),
+                   sign=-1) for year in YEARS),
+            *(Link(("revenue", "total", year), ("pnl", "revenue", year)) for year in YEARS),
+            *(Link(("transfers", "result", year), ("pnl", "net_transfer_income", year))
+              for year in YEARS),
+            MIX.check(),
+        ),
+        sentences=(
+            SentenceFigureSpec(
+                "impairment_player_registrations", 155,
+                "außerplanmäßige Wertminderungen" if german else "impairment losses",
+                (r"^Wertminderungen in Höhe von TEUR (?P<amount>[\d.]+) \(Vorjahr TEUR 9\.986\)"
+                 if german else r"impairment losses of EUR (?P<amount>[\d,]+) thousand "
+                                r"\(previous year: EUR 9,986 thousand\)"),
+                "2025", note=IMPAIRMENT_NOTE),
+        ),
+        gaps=MIX.gaps(),
         figures=(
             FigureSpec("revenue_total_reported", (("pnl", "revenue"),), "2025"),
             FigureSpec("revenue_ex_player_trading", (("pnl", "revenue"),), "2025",
@@ -113,6 +199,13 @@ def document(language: str, control_index: int | None) -> DocumentSpec:
             FigureSpec("net_result", (("pnl", "net_result"),), "2025"),
             FigureSpec("net_result_attributable_parent", (("pnl", "attributable_parent"),),
                        "2025", note=ATTRIBUTABLE_NOTE),
+            *MIX.figures("2025"),
+            FigureSpec("amortisation_player_registrations",
+                       (("intangibles", "additions", "players"),), "2025",
+                       note="Zugänge del bloque de Abschreibungen, columna Spielerwerte (pág. "
+                            "150): la amortización del año de los jugadores."),
+            FigureSpec("profit_on_player_disposals", (("transfers", "result"),), "2025",
+                       note=DISPOSALS_NOTE),
         ),
     )
 

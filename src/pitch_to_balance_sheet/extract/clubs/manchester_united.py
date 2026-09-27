@@ -11,12 +11,22 @@ Páginas localizadas buscando los títulos en el texto:
   120, nota 7.1, Employee benefit expenses.
 - 20-F 2026: pág. 101 (F-6), 2026, 2025 y 2024; pág. 122, nota 7.1.
 La nota 7.1 da los gastos en negativo; aquí van en positivo (cambio de signo anotado).
+Fase 3a, en los dos 20-F (2025 / 2026):
+- págs. 115 / 117, nota 4.1, ingresos: Commercial (Sponsorship y Retail...), Broadcasting
+  (Domestic, European, Other) y Matchday, con el total sin rótulo al final. Mapeo en
+  config/line_items.yaml.
+- págs. 121 / 123, nota 8, Profit on disposal of intangible assets.
+- págs. 128 / 130, nota 16, Intangible assets: el bloque "Year ended 30 June 2025", columna
+  Registrations. No tiene línea de deterioro.
 """
 
+from pitch_to_balance_sheet.extract import mix
 from pitch_to_balance_sheet.extract.statements import (
     ClubSpec,
+    Cross,
     DocumentSpec,
     FigureSpec,
+    Link,
     Sum,
     TableSpec,
 )
@@ -44,10 +54,41 @@ EXCEPTIONAL_NOTE = (
 )
 
 
+REVENUE_ROWS = {
+    "sponsorship": r"^sponsorship$",
+    "retail": r"^retail, merchandising, apparel & products licensing revenue$",
+    "commercial": r"^commercial$",
+    "domestic": r"^domestic competitions$",
+    "european": r"^european competitions$",
+    "broadcasting_other": r"^other$",
+    "broadcasting": r"^broadcasting$",
+    "matchday": r"^matchday$",
+}
+DISPOSAL_ROWS = {
+    "registrations": r"^profit on disposal of registrations$",
+    "loan_income": r"^player loan income$",
+}
+INTANGIBLE_COLUMNS = ("goodwill", "registrations", "other", "total")
+INTANGIBLE_ROWS = {
+    "opening": r"^opening net book amount$",
+    "additions": r"^additions$",
+    "disposals": r"^disposals$",
+    "amortization": r"^amortization charge$",
+    "closing": r"^closing book amount$",
+}
+MIX = mix.for_club("manchester_united")
+IMPAIRMENT_GAP = (
+    "no se publica: el bloque de 2025 de la nota 16 (pág. 128) no tiene línea de deterioro de "
+    "registrations, y su movimiento cuadra sin ella"
+)
+
+
 def document(report_year: int, control_index: int | None) -> DocumentSpec:
     """El 20-F presentado en report_year: 2025 (ejercicio 2024/25) o 2026 (2025/26)."""
     columns = tuple(str(report_year - offset) for offset in range(3))
     pnl_page, staff_page = (99, 120) if report_year == 2025 else (101, 122)
+    revenue_page, disposal_page, intangible_page = ((115, 121, 128) if report_year == 2025
+                                                    else (117, 123, 130))
     pnl_rows = {
         "revenue": r"^revenue from contracts with customers$",
         "operating_expenses": r"^operating expenses$",
@@ -91,7 +132,35 @@ def document(report_year: int, control_index: int | None) -> DocumentSpec:
                     Sum("staff_costs_total", ("staff_subtotal", "termination_benefits")),
                 ),
             ),
+            TableSpec(
+                "revenue", revenue_page, columns, REVENUE_ROWS,
+                totals_after={"total": "matchday"},
+                sums=(
+                    Sum("commercial", ("sponsorship", "retail")),
+                    Sum("broadcasting", ("domestic", "european", "broadcasting_other")),
+                    Sum("total", ("commercial", "broadcasting", "matchday")),
+                ),
+            ),
+            TableSpec(
+                "disposals", disposal_page, columns, DISPOSAL_ROWS,
+                select=DISPOSAL_ROWS["registrations"], totals_after={"total": "loan_income"},
+                sums=(Sum("total", tuple(DISPOSAL_ROWS)),),
+            ),
+            TableSpec(
+                "intangibles", intangible_page, INTANGIBLE_COLUMNS, INTANGIBLE_ROWS,
+                block=(r"^year ended 30 june 2025$", r"^closing book amount$"),
+                sums=(Sum("closing", ("opening", "additions", "disposals", "amortization")),),
+                cross=(Cross("total", ("goodwill", "registrations", "other"),
+                             tuple(INTANGIBLE_ROWS)),),
+            ),
         ),
+        links=(
+            *(Link(("revenue", "total", year), ("pnl", "revenue", year)) for year in columns),
+            *(Link(("disposals", "total", year), ("pnl", "profit_disposal_intangibles", year))
+              for year in columns),
+            MIX.check(),
+        ),
+        gaps={**MIX.gaps(), "impairment_player_registrations": IMPAIRMENT_GAP},
         figures=(
             FigureSpec("revenue_total_reported", (("pnl", "revenue"),), "2025"),
             FigureSpec("revenue_ex_player_trading", (("pnl", "revenue"),), "2025",
@@ -101,6 +170,14 @@ def document(report_year: int, control_index: int | None) -> DocumentSpec:
             FigureSpec("staff_costs_exceptional", (("staff", "termination_benefits"),), "2025",
                        note=EXCEPTIONAL_NOTE, negate=True, included_in_staff_costs="true"),
             FigureSpec("net_result", (("pnl", "net_result"),), "2025"),
+            *MIX.figures("2025"),
+            FigureSpec("amortisation_player_registrations",
+                       (("intangibles", "amortization", "registrations"),), "2025",
+                       note="Amortization charge de Registrations, bloque de 2025 de la nota 16.",
+                       negate=True),
+            FigureSpec("profit_on_player_disposals", (("disposals", "registrations"),), "2025",
+                       note="Profit on disposal of registrations (nota 8); sin ingresos por "
+                            "cesiones en 2025."),
         ),
     )
 

@@ -1,6 +1,6 @@
 # Estado del proyecto
 
-Actualizado: 27/09/2026 (fase 2h)
+Actualizado: 27/09/2026 (fase 3a)
 
 ## Fase 0: cerrada
 
@@ -403,9 +403,9 @@ Cuadres guardados: 353, y el único que falla es el de la nota 27 de Porto. Los 
    - `text-layer` se salta los paquetes ESEF y lo dice.
 4. **Tests:** 116, en verde. El lector de iXBRL se prueba con un paquete sintético sin datos reales (`tests/fixtures/esef_sintetico/`).
 
-## Fase 2h: tolerancia de redondeo, Porto completo y resultado atribuible (hecha, a falta del OK)
+## Fase 2h: tolerancia de redondeo, Porto completo y resultado atribuible (cerrada)
 
-Hecha el 27/09/2026. No se ha convertido nada a EUR ni se ha empezado la fase 3a.
+Hecha y cerrada el 27/09/2026 con el OK del usuario, que comprobó el CI de `2b9e751`.
 
 **Resultado** (`python -m pitch_to_balance_sheet extract`, exit 0), en miles. Lazio va en euros en el CSV y aquí, en miles redondeados. Un * marca las cifras derivadas:
 
@@ -445,6 +445,89 @@ Hecha el 27/09/2026. No se ha convertido nada a EUR ni se ha empezado la fase 3a
    - **Ninguno de los demás lo publica.** La línea de Liverpool es del resultado global total, no del neto. Lazio no etiqueta ningún atribuible.
 5. **`text-layer`:** «custos com pessoal» entre las palabras clave en portugués. El comunicado de Porto, que antes no encontraba ninguna, la encuentra en las págs. 2 y 5.
 6. **Tests:** 127, en verde.
+
+## Fase 3a: conceptos de la cuenta de resultados 2024/25 (hecha, a falta del OK)
+
+Hecha el 27/09/2026. Moneda original: no se ha convertido nada a EUR.
+
+**Resultado** (`python -m pitch_to_balance_sheet extract`, exit 0), en miles de la moneda de cada club; Lazio se guarda en euros y aquí va redondeado a miles. Un * marca las cifras derivadas:
+
+| Club | Moneda | Matchday | Broadcasting | Commercial | Other | Suma = ingresos sin traspasos | Amortización | Deterioro | Resultado por traspasos | Huecos |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Arsenal | GBP | 153,854 | 272,784 | 263,193 | 713 | sí | 171,627 | 15,241 | 81,237 | — |
+| Chelsea | GBP | 86,762 | 203,230 | 200,865 | hueco | sí | 212,247 | 12,097 | 57,906 | other |
+| Liverpool | GBP | 115,591 | 263,659 | 323,472 | hueco | sí | 117,165 | 183 | 53,268 | other |
+| Manchester City | GBP | 75,084 | 278,627 * | hueco | hueco | sí, con 340,383 pendientes | 169,546 | hueco | 95,210 | commercial y other (dudosa), deterioro |
+| Tottenham Hotspur | GBP | 126,473 | 161,709 * | 276,699 | hueco | sí | 141,180 | 0 | 52,565 | other |
+| Newcastle United | GBP | 51,560 | 161,066 * | 120,179 | 2,517 | sí | 99,502 | 366 | 19,875 | — |
+| Manchester United | GBP | 160,263 | 172,977 * | 333,274 * | hueco | sí | 193,109 | hueco | 48,742 | other, deterioro |
+| Juventus | EUR | 65,411 | 177,389 | hueco | hueco | sí, con 177,105 pendientes | 116,781 | 8,151 | 89,675 * | commercial y other (dudosa) |
+| Borussia Dortmund | EUR | hueco | 227,200 | hueco | hueco | sí, con 298,819 pendientes | 85,396 | 7,000 | 37,842 | matchday, commercial y other (dudosa) |
+| Celtic | GBP | hueco | 45,208 | hueco | hueco | sí, con 98,389 pendientes | 13,845 | 1,804 | 31,488 | matchday, commercial y other (dudosa) |
+| Ajax | EUR | 64,265 * | 32,476 * | hueco | hueco | sí, con 81,388 pendientes | 41,344 | hueco | 10,333 | commercial y other (dudosa), deterioro |
+| Benfica | EUR | 41,703 | 148,007 | 40,908 | hueco | sí | 41,204 | 967 | 94,773 | other |
+| Lazio | EUR | 22,891 | 94,467 | hueco | hueco | sí, con 25,783 pendientes | 32,709 | 1,543 | 11,144 | commercial y other (dudosa) |
+| FC Porto | EUR | hueco | hueco | hueco | hueco | sí, con 149,540 pendientes | 31,036 | 3,341 | 92,942 | los cuatro (dudosas) |
+
+"Pendientes" son las partidas sin concepto firme: las dudosas y las demás partidas de sus conceptos candidatos. Cuadres: 639, todos OK; 21 por redondeo (20 de Porto y 1 de Lazio). pandera valida el reparto de los 14 clubes. Recortes revisados a ojo.
+
+1. **Mapeo** (`config/line_items.yaml`, criterio en su cabecera y en la sección 9 del plan). **Partidas dudosas**, sin concepto:
+   - **Manchester City:** «Other commercial activities», 340,383 (commercial u other). La nota dice que los ingresos tienen tres componentes principales: matchday, broadcasting y commercial.
+   - **Juventus:** «Ricavi da vendite di prodotti e licenze», 10,313 (commercial u other).
+   - **Dortmund:** «Merchandising», 40,033 (commercial u other), y «Conference, Catering, Sonstige», 50,008 (matchday, commercial u other).
+   - **Celtic:** «Retail outlets and e-commerce», 23,137 (commercial u other), y «Stadium operations», 10,461 (matchday o commercial).
+   - **Ajax:** «Merchandising», 33,408 (commercial u other).
+   - **Lazio:** «Ricavi da merchandising», 2.364.903 euros (commercial u other).
+   - **Porto:**
+     - «Vendas», 11,090, merchandising (commercial u other).
+     - «Prémios competições FIFA», 17,047 (broadcasting u other).
+     - «Outras receitas desportivas», 2,246 (matchday u other).
+     - «Corporate Hospitality», 10,553 (matchday o commercial).
+2. **Decididas por la agrupación del club**, no dudosas, para que el usuario las vea:
+   - **Retail o hospitality dentro de una categoría del club:**
+     - Manchester United: retail (144,853) dentro de su Commercial.
+     - Arsenal: la tienda dentro de su Commercial.
+     - Newcastle: merchandising y catering dentro de su Commercial.
+     - Benfica: Corporate (17,201) dentro de sus Receitas de jogos.
+     - Ajax: business-seats (23,038) e indirecte wedstrijdbaten (4,440) dentro de su subtotal de partidos.
+   - **Premios del Mundial de Clubes FIFA dentro de los derechos audiovisuales,** como los clasifica el club: Juventus (27,033) y Benfica (21,887).
+   - **Van a other:**
+     - Juventus: «Altri ricavi e proventi» (61,173), que incluye 13,658 de iniciativas comerciales.
+     - Arsenal: Property (713).
+     - Porto: «Outras prestações de serviços» (12,484) y «Outros proveitos» (2,849).
+3. **Jugadores:**
+   - **Huecos de deterioro con motivo:**
+     - Man City: la nota 12 da un solo cargo, que la nota 5 llama «amortisation and impairment», y va entero en la amortización.
+     - Manchester United: no hay línea en 2025.
+     - Ajax: una sola línea de afschrijvingen.
+   - **Tottenham, 0:** «impaired by £nil», en el texto de la pág. 39.
+   - **Dortmund, 7.000:** una frase de la nota 8 (pág. 155). Cuadra: 85,396 + 145 + 7,000 = 92,541, frente a 92,542 de la nota 21.
+   - **Lazio:** amortización (32,709) y deterioro (1,543) salen de tablas sin etiquetar del XHTML (págs. 174 y 199), en miles.
+4. **Coherencia con las partidas de traspasos restadas** (punto 4 del encargo):
+   - **Arsenal:** «Player trading» 454 son sobre todo cesiones (nota de la pág. 23). No están en profit_on_player_disposals (81,237, otra línea de la cuenta) ni en ningún otro concepto.
+   - **Juventus:** los 109,725 son, según la nota 35 (pág. 173):
+     - plusvalenze 89,705 + 165, que están en profit_on_player_disposals (89,675, neto de 195 de minusvalenze de la nota 42);
+     - cesiones temporales 3,754, sin concepto;
+     - «altri ricavi» 16,101 (sell-on fees y bonus de traspasos), sin concepto.
+   - **Lazio:** los 2.899.825 euros son, según la nota 32 (pág. 193), cesiones temporales (2.553 miles) y otros proventi de jugadores (347 miles), sin concepto. Su profit_on_player_disposals (11.143.673 euros) es otra línea etiquetada, fuera de los ingresos.
+5. **Controles:**
+   - Liverpool (Companies House), Juventus (inglés) y Dortmund (inglés) dan cifras idénticas también en los conceptos nuevos.
+   - Manchester United (20-F 2026): sin reexpresión, diferencia 0,00%.
+   - Porto (comunicado): los conceptos nuevos quedan sin control, con motivo. Da la amortización y el deterioro juntos, y el resultado con cedência de passes en vez de las mais-valias.
+6. **OCR:**
+   - Vision pasó por todas las páginas de los 5 PDFs escaneados, para localizar las notas; queda en la caché.
+   - Del escaneo de Companies House de Liverpool, se pasaron las págs. 19 y 26.
+   - Newcastle, pág. 35: OCR por región. Con la página entera se descolocaban las cifras de 2025, y una primera región leía 2,800 en vez de 2,860. La región elegida lee todas las cifras; el rótulo de UEFA sale «VEFAR», así que esas filas van por su orden, con anclas.
+7. **Motor:**
+   - Huecos con motivo (`is_gap` y `gap_reason` en el CSV).
+   - Unidad por cifra.
+   - Tablas XHTML sin etiquetar.
+   - Bloques de filas en cuadros de movimientos.
+   - Restas en los cuadres.
+   - Cabeceras espaciadas letra a letra.
+   - «nil» como cero en una frase.
+   - «ß» como «ss» en los rótulos.
+8. **Tests:** 142, en verde.
 
 ## Decisiones
 
@@ -547,23 +630,35 @@ Tomadas por el usuario el 27/09/2026 (fase 2h):
 54. **Tolerancia de los cuadres,** para todos los clubes: max(1, floor(0,5 × filas sumadas)), con la marca "redondeo" y el número de filas (sección 5 del plan).
 55. **Lazio:** `value_reported` en euros exactos; las tablas, en miles redondeados.
 
-Tomadas en la fase 2h, a falta del OK del usuario:
+Tomadas en la fase 2h y aceptadas por el usuario el 27/09/2026:
 
 56. **Cabeceras en dos líneas y unidad confirmada por un cuadre**, solo cuando se piden en la especificación. Solo se usan en la nota 33 de Porto.
 57. **Fila después de su ancla** para rótulos que se repiten en la página. Solo se usa en el atribuible de Dortmund.
 58. **Qué cuenta como atribuible publicado:** la línea del resultado neto atribuible a la matriz, no la del resultado global. Por eso Liverpool no lo tiene.
+
+Tomadas en la fase 3a, a falta del OK del usuario:
+
+59. **Criterio del mapeo** (sección 9 del plan):
+    - Agrupación del club cuando coincide con matchday, broadcasting o commercial, y premios UEFA en broadcasting.
+    - Dudosa: una partida propia que puede ir a más de un concepto.
+    - Un concepto sin partidas es hueco con motivo, no cero.
+60. **Las partidas decididas por la agrupación del club** (punto 2 de la fase 3a).
+61. **`profit_on_player_disposals`:** el beneficio neto de ventas que publica cada club, sin cesiones ni sell-on fees ni bonus que el club no mete en esa línea.
+62. **Tottenham, deterioro 0,** tomado del «£nil» del texto; y **Dortmund, 7.000,** de una frase.
 
 ## Pendientes
 
 | Pendiente | Para cuándo | Detalle |
 | --- | --- | --- |
 | PDF manual de Arsenal | Opcional | Si el usuario lo deja en `data/raw/manual/arsenal_2024-25.pdf`, pasa a ser la fuente principal. Hay que añadirlo a `sources.yaml` con su URL y registrarlo |
-| OK a la fase 2h | Antes de seguir | La tabla de 14 clubes y las decisiones 56 a 58 |
+| OK a la fase 3a | Antes de seguir | La tabla y las decisiones 59 a 62 |
+| Partidas dudosas | Antes de las métricas de mix | Las 12 de la fase 3a: a qué concepto va cada una. Hasta entonces, sus conceptos son hueco |
+| Sell-on fees, bonus y cesiones | Antes del SCR aproximado | Juventus: 16,101 de sell-on y bonus y 3,754 de cesiones. Arsenal: 454 de cesiones. Lazio: 2.900 miles. Hoy no van a ningún concepto |
 | Hooks y OCR fuera del Mac | Si se trabaja desde la VM Linux | El hook apunta al `.venv` del Mac y el binario de gitleaks es de macOS arm64: desde la VM, `git commit` fallaría. El OCR tampoco funciona fuera de macOS |
 
 El resto de comprobaciones de la fase 2 está en la sección 7.1 y en los riesgos de `plan.md`.
 
 ## Siguiente paso
 
-1. El usuario revisa la fase 2h y las decisiones 56 a 58.
+1. El usuario revisa la fase 3a, decide las partidas dudosas y las decisiones 59 a 62.
 2. Con los 14 clubes: conversión a EUR con los tipos del BCE (sección 5 del plan) y tabla consolidada.

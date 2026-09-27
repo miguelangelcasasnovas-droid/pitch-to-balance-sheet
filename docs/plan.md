@@ -239,6 +239,18 @@ Cinco métricas por club y temporada, y una valoración por EV/ingresos que da u
   - `dudoso` si las cuentas no lo dicen.
 - Ninguna de las dos ajusta ninguna métrica.
 
+**Reparto de ingresos y conceptos de jugadores (fase 3a, 27/09/2026):**
+
+- **Mapeo:** `config/line_items.yaml` recoge cada partida original de ingresos de cada club, el concepto al que va (`revenue_matchday`, `revenue_broadcasting`, `revenue_commercial` o `revenue_other`) y el motivo.
+- **Criterio del mapeo:** se sigue la agrupación del propio club cuando coincide con esas categorías, y los premios UEFA van a broadcasting.
+- **Partida dudosa:** una partida propia que podría ir a más de un concepto (retail o merchandising, "other commercial", hospitality o catering sueltos, premios FIFA fuera de broadcasting...). Queda sin concepto y con sus candidatos hasta que decida el usuario; mientras tanto, esos conceptos son hueco.
+- **Hueco:** un concepto al que no va ninguna partida.
+- **Validación con pandera:** matchday + broadcasting + commercial + other, más las partidas pendientes, tiene que ser `revenue_ex_player_trading`, con la tolerancia de redondeo de la sección 5. Si no cuadra, la extracción sale con error.
+- **Build:** una partida sin mapear la rompe. Las partidas de cada club tienen que sumar el total publicado.
+- **`amortisation_player_registrations`:** la amortización del año de los derechos de jugadores.
+- **`impairment_player_registrations`:** su deterioro. Si el club no lo separa, es hueco con motivo.
+- **`profit_on_player_disposals`:** el beneficio neto por la venta de derechos de jugadores, tal como lo publica el club (plusvalías menos minusvalías y, según el club, costes de venta). No incluye cesiones ni otros ingresos de jugadores.
+
 **Resultado neto, decidido el 27/09/2026:** `net_result` es el resultado consolidado total, con los minoritarios. `net_result_attributable_parent`, lo atribuible a la matriz, es informativo y se guarda en los clubes que lo publican.
 
 | Métrica | Definición | Si falta un dato |

@@ -6,13 +6,20 @@ Páginas localizadas a mano mirando la página renderizada:
   2024).
 - pág. 34 (31 impresa), nota 8, Employees: remuneración agregada, 2025 y 2024 en £'000. En la
   misma página, la nota 9 (consejeros) tiene otro subtotal, que también se comprueba.
+Fase 3a:
+- pág. 32 (29 impresa), nota 3, Turnover analysed by class of business: las partidas de
+  ingresos (mapeo en config/line_items.yaml).
+- pág. 37 (34 impresa), nota 14, Intangible fixed assets del grupo: el bloque "Amortisation and
+  impairment", columna Player registrations. El software no tiene deterioro (celda en blanco).
 """
 
+from pitch_to_balance_sheet.extract import mix
 from pitch_to_balance_sheet.extract.statements import (
     ClubSpec,
     Cross,
     DocumentSpec,
     FigureSpec,
+    Link,
     Sum,
     TableSpec,
 )
@@ -47,6 +54,19 @@ DIRECTORS_ROWS = {
     "directors_pension": r"^company pension contributions",
 }
 NOTE_COLUMNS = ("2025", "2024")
+TURNOVER_ROWS = {
+    "broadcasting": r"^broadcasting$",
+    "commercial": r"^commercial$",
+    "matchday": r"^matchday$",
+}
+INTANGIBLE_ROWS = {
+    "opening": r"^at 1 july 2024$",
+    "charge": r"^amortisation charged for the year$",
+    "impairment": r"^impairment losses$",
+    "disposals": r"^disposals$",
+    "closing": r"^at 30 june 2025$",
+}
+MIX = mix.for_club("chelsea")
 
 REVENUE_EX_NOTE = (
     "La cuenta de resultados (pág. 17) separa la columna de amortización y traspasos de "
@@ -93,13 +113,45 @@ SPEC = ClubSpec(
                 sums=(Sum("directors_total", tuple(DIRECTORS_ROWS)),),
                 select=r"^company pension",
             ),
+            TableSpec(
+                "turnover", 32, NOTE_COLUMNS, TURNOVER_ROWS, select=TURNOVER_ROWS["broadcasting"],
+                totals_after={"total": "matchday"},
+                sums=(Sum("total", tuple(TURNOVER_ROWS)),),
+            ),
+            TableSpec(
+                "intangibles", 37, ("software", "players", "total"), INTANGIBLE_ROWS,
+                block=(r"^amortisation and impairment$", INTANGIBLE_ROWS["closing"]),
+                sums=(Sum("closing", ("opening", "charge", "impairment", "disposals"),
+                          ("players", "total")),
+                      Sum("closing", ("opening", "charge", "disposals"), ("software",))),
+                cross=(Cross("total", ("software", "players"),
+                             ("opening", "charge", "disposals", "closing")),),
+            ),
         ),
+        links=(
+            Link(("turnover", "total", "2025"), ("pnl", "turnover", "total_2025")),
+            Link(("turnover", "total", "2024"), ("pnl", "turnover", "total_2024")),
+            # El deterioro es todo de jugadores: el software no tiene.
+            Link(("intangibles", "impairment", "players"), ("intangibles", "impairment", "total")),
+            MIX.check(),
+        ),
+        gaps=MIX.gaps(),
         figures=(
             FigureSpec("revenue_total_reported", (("pnl", "turnover"),), "total_2025"),
             FigureSpec("revenue_ex_player_trading", (("pnl", "turnover"),), "total_2025",
                        note=REVENUE_EX_NOTE),
             FigureSpec("staff_costs", (("staff", "staff_costs_total"),), "2025"),
             FigureSpec("net_result", (("pnl", "net_result"),), "total_2025"),
+            *MIX.figures("2025"),
+            FigureSpec("amortisation_player_registrations",
+                       (("intangibles", "charge", "players"),), "2025",
+                       note="Amortisation charged for the year de Player registrations (nota 14)."),
+            FigureSpec("impairment_player_registrations",
+                       (("intangibles", "impairment", "players"),), "2025",
+                       note="Impairment losses de Player registrations (nota 14); la nota 5 lo "
+                            "llama impairment of player registrations (12,1 millones)."),
+            FigureSpec("profit_on_player_disposals", (("pnl", "profit_disposal_players"),),
+                       "total_2025", note="Profit on disposal of player registrations."),
         ),
     ),
 )

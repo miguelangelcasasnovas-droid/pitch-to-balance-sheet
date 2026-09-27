@@ -10,8 +10,18 @@ traducción al inglés, con la misma paginación. Cada página del PDF son dos d
 
 La cuenta de resultados no tiene una línea de total de personal: los gastos de personal son la
 suma de los totales de las notas 40 y 41, que tienen que coincidir con sus líneas de la cuenta.
+
+Fase 3a. Las partidas de ingresos son las líneas de la cuenta (mapeo en
+config/line_items.yaml). Las notas de jugadores tienen también columna de variación, que se deja
+fuera de la región, y debajo un detalle por jugador que la región deja fuera:
+- pág. 173, mitad derecha, nota 35, proventi da gestione diritti calciatori: plusvalenze,
+  cesiones temporales y otros ingresos (sell-on y bonus de traspasos).
+- pág. 176, mitad izquierda, nota 42, oneri da gestione diritti calciatori: minusvalenze.
+- pág. 177, mitad izquierda, nota 44, ammortamenti e svalutazioni diritti calciatori.
+profit_on_player_disposals = plusvalenze − minusvalenze de las notas 35 y 42.
 """
 
+from pitch_to_balance_sheet.extract import mix
 from pitch_to_balance_sheet.extract.statements import (
     ClubSpec,
     DocumentSpec,
@@ -51,6 +61,12 @@ REVENUE_EX_NOTE = (
 SEVERANCE_NOTE = (
     "Incentivazioni all'esodo (nota 40, pág. 175): una fila ordinaria dentro del personal "
     "tesserato, sin clasificar como excepcional. Informativa: no ajusta ninguna métrica."
+)
+MIX = mix.for_club("juventus")
+DISPOSALS_NOTE = (
+    "Plusvalenze (nota 35) menos minusvalenze (nota 42) de cesión de derechos de jugadores y "
+    "jugadoras. Fuera quedan las cesiones temporales y los «altri ricavi» (sell-on y bonus) de "
+    "la nota 35, que no tienen concepto (ver config/line_items.yaml)."
 )
 STAFF_NOTE = (
     "Suma de los totales de las notas 40 (personale tesserato) y 41 (altro personale): la "
@@ -131,6 +147,51 @@ def document(language: str, control_index: int | None) -> DocumentSpec:
         "total": r"^altro personale$" if italian else r"^other personnel expenses$",
     }
     header_years = r"^\d{4}/\d{4}$"
+    note35_rows = {
+        "gains_male": (r"^plusvalenze da cessione diritti calciatori$" if italian
+                       else r"^gains on disposal of male players registration rights$"),
+        "gains_female": (r"^plusvalenze da cessione diritti calciatrici$" if italian
+                         else r"^gains on disposal of female players registration rights$"),
+        "other": r"^altri ricavi$" if italian else r"^other revenues$",
+        "total": (r"^proventi da gestione diritti calciatori$" if italian
+                  else r"^revenues from players registration rights$"),
+    }
+    note42_rows = {
+        "temporary": (r"^oneri per acquisto temporaneo diritti calciatori$" if italian
+                      else r"^expenses for the temporary acquisition of players registration "
+                           r"rights$"),
+        "losses_male": (r"^minusvalenze da cessione diritti calciatori$" if italian
+                        else r"^losses on disposal of male players registration rights$"),
+        "losses_youth": (r"^minusvalenze da cessione diritti calciatori giovani di serie$"
+                         if italian else r"^losses on disposal of registered youth players "
+                                         r"registration rights$"),
+        "losses_female": (r"^minusvalenze da cessione diritti calciatrici$" if italian
+                          else r"^losses on disposal of female players registration rights$"),
+        "other": r"^altri oneri$" if italian else r"^other operating expenses$",
+        "total": (r"^oneri da gestione diritti calciatori$" if italian
+                  else r"^expenses from players registration rights$"),
+    }
+    if italian:  # rótulo en dos líneas con las cifras en medio: la fila sin rótulo de después
+        note42_rows["ancillary_label"] = (r"^oneri accessori su diritti pluriennali calciatori e "
+                                          r"tesserati non$")
+        note42_after = {"ancillary": "ancillary_label"}
+    else:  # en inglés las cifras van con la primera línea del rótulo
+        note42_rows["ancillary"] = (r"^ancillary costs for non-capitalised players and technical "
+                                    r"staffs$")
+        note42_after = {}
+    # En inglés el rótulo se parte en dos líneas; las cifras van en la primera.
+    note35_rows["temporary"] = (r"^ricavi per cessione temporanea diritti calciatori/calciatrici$"
+                                if italian else r"^revenues from the temporary disposal of "
+                                                r"players registra-$")
+    note44_rows = {
+        "amortisation": r"^ammortamenti$" if italian else r"^amortisation$",
+        "male": r"^calciatori professionisti$" if italian else r"^male professional players$",
+        "youth": r"^giovani di serie$" if italian else r"^registered youth players$",
+        "female": r"^calciatrici$" if italian else r"^female players$",
+        "write_downs": r"^svalutazioni$" if italian else r"^write-downs$",
+        "total": (r"^ammortamenti e svalutazioni diritti calciatori$" if italian
+                  else r"^amortisation and write-downs of players registration rights$"),
+    }
     return DocumentSpec(
         method="text",
         unit_evidence=r"migliaia di euro" if italian else r"thousands of euro",
@@ -145,12 +206,30 @@ def document(language: str, control_index: int | None) -> DocumentSpec:
             TableSpec("note41", 175, YEARS, note41_rows, region=NOTE41_REGION,
                       header=header_years, select=note41_rows["total"],
                       sums=(Sum("total", tuple(note41_rows)[:-1]),)),
+            TableSpec("note35", 173, YEARS, note35_rows, region=(0.5, 0.0, 0.89, 0.28),
+                      header=header_years,
+                      sums=(Sum("total", ("gains_male", "temporary", "gains_female", "other")),)),
+            TableSpec("note42", 176, YEARS, note42_rows, region=(0.0, 0.0, 0.39, 0.34),
+                      header=header_years, totals_after=note42_after,
+                      sums=(Sum("total", ("ancillary", "temporary", "losses_male", "losses_youth",
+                                          "losses_female", "other")),)),
+            TableSpec("note44", 177, YEARS, note44_rows,
+                      region=(0.0, 0.0, 0.39, 0.76 if italian else 0.78), header=header_years,
+                      select=note44_rows["write_downs"],
+                      sums=(Sum("amortisation", ("male", "youth", "female")),
+                            Sum("total", ("amortisation", "write_downs")))),
         ),
-        links=tuple(
-            Link((note, "total", year), ("pnl", line, year), sign=-1)
-            for note, line in (("note40", "registered_personnel"), ("note41", "other_personnel"))
-            for year in YEARS
+        links=(
+            *(Link((note, "total", year), ("pnl", line, year), sign=-1)
+              for note, line in (("note40", "registered_personnel"), ("note41", "other_personnel"),
+                                 ("note42", "player_rights_expenses"),
+                                 ("note44", "player_amortisation"))
+              for year in YEARS),
+            *(Link(("note35", "total", year), ("pnl", "player_rights_income", year))
+              for year in YEARS),
+            MIX.check(),
         ),
+        gaps=MIX.gaps(),
         figures=(
             FigureSpec("revenue_total_reported", (("pnl", "total_revenue"),), "2025",
                        note=REVENUE_NOTE),
@@ -163,6 +242,18 @@ def document(language: str, control_index: int | None) -> DocumentSpec:
             FigureSpec("staff_severance_disclosed", (("note40", "termination_incentives"),),
                        "2025", note=SEVERANCE_NOTE, included_in_staff_costs="true"),
             FigureSpec("net_result", (("pnl", "net_result"),), "2025"),
+            *MIX.figures("2025"),
+            FigureSpec("amortisation_player_registrations", (("note44", "amortisation"),),
+                       "2025", note="Ammortamenti de la nota 44 (profesionales, jóvenes y "
+                                    "jugadoras)."),
+            FigureSpec("impairment_player_registrations", (("note44", "write_downs"),), "2025",
+                       note="Svalutazioni de la nota 44."),
+            FigureSpec("profit_on_player_disposals",
+                       (Part("note35", "gains_male"), Part("note35", "gains_female"),
+                        Part("note42", "losses_male", sign=-1),
+                        Part("note42", "losses_youth", sign=-1),
+                        Part("note42", "losses_female", sign=-1)),
+                       "2025", note=DISPOSALS_NOTE),
         ),
     )
 

@@ -13,14 +13,27 @@ usuario del 27/09/2026 y sección 5 del plan); las tablas los muestran en miles 
 cuadres se hacen en euros, con los pesos del linkbase de cálculo del emisor.
 Ese linkbase suma las imposte differite (4.846.836, un ingreso) con peso +1, aunque la etiqueta
 es de gasto: el resultado cuadra así, y así se comprueba.
+
+Fase 3a. Las partidas de ingresos son las etiquetas de la cuenta (mapeo en
+config/line_items.yaml); el cálculo de TOTALE RICAVI comprueba que no falta ninguna. Las notas
+de jugadores no están etiquetadas: se leen de las tablas del XHTML, en miles de euros, citadas
+por página y fila:
+- pág. 174: movimiento de los diritti pluriennali prestazioni tesserati, bloque del fondo de
+  amortización, columna Totale ("Quota dell'esercizio").
+- pág. 199, nota 40: "Svalutazione delle immobilizzazioni", que según la pág. 200 son todas de
+  derechos de jugadores.
+El beneficio por traspasos sí está etiquetado: plusvalenze menos minusvalenze, en euros.
 """
 
+from pitch_to_balance_sheet.extract import mix
 from pitch_to_balance_sheet.extract.statements import (
     Calc,
     ClubSpec,
     FigureSpec,
     IxbrlDocumentSpec,
     Part,
+    Sum,
+    XhtmlTableSpec,
 )
 
 LEI = "81560036DCCA48CA0F08"
@@ -82,6 +95,20 @@ STAFF_NOTE = (
     "jugadores, no un gasto del año."
 )
 NET_NOTE = "UTILE (PERDITA) DI ESERCIZIO consolidado."
+MIX = mix.for_club("lazio")
+FUND_ROWS = {
+    "opening": r"^al 1 luglio 2024$",
+    "disposals": r"^decrementi$",
+    "charge": r"^quota dellesercizio$",
+    "closing": r"^al 30 giugno 2025$",
+}
+WRITEDOWN_ROWS = {
+    "intangible": r"^ammortamenti immobilizzazioni immateriali$",
+    "tangible": r"^ammortamenti immobilizzazioni materiali$",
+    "right_of_use": r"^amm.to dei diritti duso$",
+    "impairment": r"^svalutazione delle immobilizzazioni$",
+    "total": r"^totale$",
+}
 
 SPEC = ClubSpec(
     club_id="lazio",
@@ -105,6 +132,29 @@ SPEC = ClubSpec(
                        "2025", note=REVENUE_EX_NOTE),
             FigureSpec("staff_costs", (("ixbrl", "staff"),), "2025", note=STAFF_NOTE),
             FigureSpec("net_result", (("ixbrl", "net_result"),), "2025", note=NET_NOTE),
+            *MIX.figures("2025"),
+            FigureSpec("amortisation_player_registrations", (Part("fund", "charge", "total"),),
+                       "2025", negate=True, unit="thousands",
+                       note="Quota dell'esercizio del fondo de amortización de los diritti "
+                            "pluriennali prestazioni tesserati (pág. 174), en miles; la pág. 200 "
+                            "da la misma cifra, 32.709, para jugadores y entrenadores."),
+            FigureSpec("impairment_player_registrations", (("writedowns", "impairment"),), "2025",
+                       unit="thousands",
+                       note="Svalutazione delle immobilizzazioni (nota 40, pág. 199), en miles: "
+                            "según la pág. 200, todas de derechos de jugadores."),
+            FigureSpec("profit_on_player_disposals", (("ixbrl", "disposal_result"),), "2025",
+                       note="RICAVI NETTI DA CESSIONE DIRITTI PLURIENNALI PRESTAZIONI TESSERATI: "
+                            "plusvalenze (11.491.495) menos minusvalenze (347.822)."),
         ),
+        tables=(
+            XhtmlTableSpec("fund", 174, ("total",), (6,), FUND_ROWS, select=FUND_ROWS["charge"],
+                           block=(r"^fondo ammortamenti$", FUND_ROWS["closing"]),
+                           sums=(Sum("closing", ("opening", "disposals", "charge")),)),
+            XhtmlTableSpec("writedowns", 199, ("2025", "2024"), (1, 2), WRITEDOWN_ROWS,
+                           select=WRITEDOWN_ROWS["impairment"],
+                           sums=(Sum("total", ("intangible", "tangible", "right_of_use",
+                                               "impairment")),)),
+        ),
+        gaps=MIX.gaps(),
     ),
 )

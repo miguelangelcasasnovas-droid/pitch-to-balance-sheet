@@ -9,13 +9,21 @@ la página renderizada:
   frase, las indemnizaciones por despido, en libras y fuera del total de personal
   (staff_severance_disclosed, informativa). El OCR lee mal esa cifra ("€153,00"); en la imagen
   se lee "£153,000".
+Fase 3a:
+- pág. 33, nota 2, Revenue and other income: las partidas de ingresos (mapeo en
+  config/line_items.yaml).
+- pág. 38, nota 10, Intangible fixed assets de 2025: el bloque "Amortisation and impairment",
+  columna Player registrations. No tiene línea de deterioro en 2025; la pág. 39 lo dice en una
+  frase: "impaired by £nil (2024: £1,770,000)".
 """
 
+from pitch_to_balance_sheet.extract import mix
 from pitch_to_balance_sheet.extract.statements import (
     ClubSpec,
     Cross,
     DocumentSpec,
     FigureSpec,
+    Link,
     SentenceFigureSpec,
     Sum,
     TableSpec,
@@ -47,6 +55,20 @@ STAFF_ROWS = {
     "other_pension_costs": r"^other pension costs",
 }
 
+REVENUE_ROWS = {
+    "match_receipts": r"^match receipts$",
+    "uefa": r"^uefa prize money$",
+    "tv_media": r"^tv and media$",
+    "commercial": r"^commercial$",
+    "revenue": r"^revenue$",
+}
+INTANGIBLE_ROWS = {
+    "opening": r"^at 30 june 2024$",
+    "charge": r"^charged in year - amortisation$",
+    "disposals": r"^disposals$",
+    "closing": r"^at 30 june 2025$",
+}
+MIX = mix.for_club("tottenham")
 SEVERANCE_NOTE = (
     "Nota 5 (pág. 35): «In addition to the above payroll costs, redundancy costs of £153,000 "
     "(2024: £86,000) were also charged to the income statement during the year.» Fuera del "
@@ -92,15 +114,49 @@ SPEC = ClubSpec(
                 totals_after={"staff_costs_total": "other_pension_costs"},
                 sums=(Sum("staff_costs_total", tuple(STAFF_ROWS)),),
             ),
+            TableSpec(
+                "revenue", 33, ("2025", "2024"), REVENUE_ROWS, header=r"^20(24|25)$",
+                select=REVENUE_ROWS["match_receipts"],
+                sums=(Sum("revenue", tuple(REVENUE_ROWS)[:-1]),),
+            ),
+            TableSpec(
+                "intangibles", 38, ("players", "software", "total"), INTANGIBLE_ROWS,
+                select=INTANGIBLE_ROWS["charge"],
+                block=(r"^amortisation and impairment$", INTANGIBLE_ROWS["closing"]),
+                sums=(Sum("closing", ("opening", "charge", "disposals"), ("players", "total")),
+                      Sum("closing", ("opening", "charge"), ("software",))),
+                cross=(Cross("total", ("players", "software"), ("opening", "charge", "closing")),),
+            ),
         ),
+        links=(
+            Link(("revenue", "revenue", "2025"), ("pnl", "revenue", "total_2025")),
+            Link(("revenue", "revenue", "2024"), ("pnl", "revenue", "total_2024")),
+            MIX.check(),
+        ),
+        gaps=MIX.gaps(),
         figures=(
             FigureSpec("revenue_total_reported", (("pnl", "revenue"),), "total_2025"),
             FigureSpec("revenue_ex_player_trading", (("pnl", "revenue"),), "total_2025",
                        note=REVENUE_EX_NOTE),
             FigureSpec("staff_costs", (("staff", "staff_costs_total"),), "2025"),
             FigureSpec("net_result", (("pnl", "net_result"),), "total_2025"),
+            *MIX.figures("2025"),
+            FigureSpec("amortisation_player_registrations",
+                       (("intangibles", "charge", "players"),), "2025",
+                       note="Charged in year - amortisation de Player registrations (nota 10)."),
+            FigureSpec("profit_on_player_disposals", (("pnl", "profit_disposal_intangibles"),),
+                       "total_2025",
+                       note="Profit on disposal of intangible fixed assets: en 2025 solo hay "
+                            "bajas de derechos de jugadores; el software no tiene (nota 10)."),
         ),
         sentences=(
+            SentenceFigureSpec(
+                "impairment_player_registrations", 39, "impaired by £nil",
+                # El OCR lee la £ como otra letra ("Enil").
+                r"were impaired by \S?(?P<amount>nil) \(2024", "2025", scale=1000,
+                note="Nota 10 (pág. 39): «capitalised player registrations relating to zero "
+                     "individuals (2024: one) were impaired by £nil»: el deterioro de 2025 es "
+                     "cero, publicado en el texto."),
             SentenceFigureSpec(
                 "staff_severance_disclosed", 35, "redundancy costs",
                 # La cifra del año anterior ancla la frase; el OCR no lee el paréntesis ni la £.

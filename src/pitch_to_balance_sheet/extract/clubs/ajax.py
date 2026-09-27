@@ -7,8 +7,12 @@ punto de miles y negativos entre paréntesis. Páginas localizadas buscando los 
   se identifican por su orden, con anclas; los cuadres comprueban que cada cifra está en su fila.
 - pág. 110, nota 27, lonen, salarissen en sociale lasten, en positivo; su total tiene que
   coincidir con la línea de la cuenta de resultados, cambiada de signo.
+- pág. 108, nota 25, netto-omzet: las partidas de ingresos, con un subtotal de partidos y
+  competiciones (mapeo en config/line_items.yaml).
+Amortización y resultado de traspasos son líneas de la cuenta (notas 30 y 31, págs. 112-113).
 """
 
+from pitch_to_balance_sheet.extract import mix
 from pitch_to_balance_sheet.extract.statements import (
     ClubSpec,
     DocumentSpec,
@@ -55,6 +59,23 @@ ATTRIBUTABLE_NOTE = (
     "Toe te rekenen aan de aandeelhouders van de vennootschap (pág. 81): todo el resultado; no "
     "hay minoritarios. Informativa."
 )
+REVENUE_ROWS = {
+    "competition": r"^recettes competitie, nationale beker en vriendschappelijke wedstrijden$",
+    "european_receipts": r"^recettes europese competities$",
+    "european_prizes": r"^premies europese competities$",
+    "season_tickets": r"^seizoenkaarten$",
+    "business_seats": r"^business-seats en skybox-plaatsen$",
+    "indirect": r"^indirecte wedstrijdbaten$",
+    "subtotal": r"^subtotaal$",
+    "partnerships": r"^partnerships$",
+    "television": r"^televisie$",
+    "merchandising": r"^merchandising$",
+    "other": r"^overige baten$",
+    "total": r"^totaal netto-omzet$",
+}
+MATCH_ROWS = ("competition", "european_receipts", "european_prizes", "season_tickets",
+              "business_seats", "indirect")
+MIX = mix.for_club("ajax")
 REVENUE_EX_NOTE = (
     "La nota 25 (pág. 108) desglosa la netto-omzet en ingresos de partidos y competiciones, "
     "partnerships, televisie, merchandising y overige baten; los traspasos van aparte, en "
@@ -93,9 +114,26 @@ SPEC = ClubSpec(
                 totals_after={"staff_costs_total": "pension_charges"},
                 sums=(Sum("staff_costs_total", tuple(STAFF_ROWS)),),
             ),
+            TableSpec(
+                "revenue", 108, YEARS, REVENUE_ROWS, header=HEADER,
+                sums=(Sum("subtotal", MATCH_ROWS),
+                      Sum("total", ("subtotal", "partnerships", "television", "merchandising",
+                                    "other"))),
+            ),
         ),
-        links=tuple(Link(("staff", "staff_costs_total", year), ("pnl", "wages", year), sign=-1)
-                    for year in YEARS),
+        links=(
+            *(Link(("staff", "staff_costs_total", year), ("pnl", "wages", year), sign=-1)
+              for year in YEARS),
+            *(Link(("revenue", "total", year), ("pnl", "revenue", year)) for year in YEARS),
+            MIX.check(),
+        ),
+        gaps={
+            **MIX.gaps(),
+            "impairment_player_registrations": (
+                "no se publica por separado: la nota 30 (pág. 112) da una sola línea, "
+                "«Afschrijvingen vergoedingssommen»; el auditor (pág. 125) dice que no hubo "
+                "indicio de deterioro"),
+        },
         figures=(
             FigureSpec("revenue_total_reported", (("pnl", "revenue"),), "2025"),
             FigureSpec("revenue_ex_player_trading", (("pnl", "revenue"),), "2025",
@@ -104,6 +142,14 @@ SPEC = ClubSpec(
             FigureSpec("net_result", (("pnl", "net_result"),), "2025"),
             FigureSpec("net_result_attributable_parent", (("pnl", "attributable"),), "2025",
                        note=ATTRIBUTABLE_NOTE),
+            *MIX.figures("2025"),
+            FigureSpec("amortisation_player_registrations", (("pnl", "player_amortisation"),),
+                       "2025", negate=True,
+                       note="Afschrijvingen vergoedingssommen (nota 30): amortización de los "
+                            "derechos de jugadores."),
+            FigureSpec("profit_on_player_disposals", (("pnl", "transfer_result"),), "2025",
+                       note="Resultaat vergoedingssommen (nota 31): neto de las ventas de "
+                            "jugadores, jugadoras y entrenadores, menos su valor en libros."),
         ),
     ),
 )

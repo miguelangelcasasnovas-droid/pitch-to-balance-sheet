@@ -4,12 +4,20 @@ Páginas localizadas a mano mirando la página renderizada:
 - pág. 19 (16 impresa), Consolidated statement of comprehensive income: 2025 y 2024 en £000.
   El OCR se hace sobre la región de la tabla.
 - pág. 36 (33 impresa), nota 7, Employees: "Staff costs were as follows", 2025 y 2024 en £000.
+Fase 3a, en la pág. 35 (32 impresa), con OCR de región:
+- nota 4, turnover by class of business: las partidas de ingresos (mapeo en
+  config/line_items.yaml). Con la página entera el OCR descoloca las cifras de 2025; con la
+  región de la tabla lee todas, pero el rótulo UEFA sale "VEFAR": filas por su orden, con anclas.
+- nota 5, operating profit: amortización y deterioro de intangibles (solo derechos de jugadores,
+  nota 12), que suman la línea de la cuenta.
 """
 
+from pitch_to_balance_sheet.extract import mix
 from pitch_to_balance_sheet.extract.statements import (
     ClubSpec,
     DocumentSpec,
     FigureSpec,
+    LinkSum,
     Sum,
     TableSpec,
 )
@@ -49,6 +57,15 @@ STAFF_ROWS = {
     "other_pension_costs": r"^other pension costs$",
 }
 
+TURNOVER_REGION = (0.10, 0.47, 0.90, 0.59)
+TURNOVER_ORDER = ("matchday", "media", "uefa", "commercial", "other_income", "total")
+TURNOVER_ANCHORS = {"matchday": r"^matchday$", "media": r"^media$", "total": r"^$"}
+OPERATING_REGION = (0.05, 0.66, 0.97, 0.80)
+OPERATING_ROWS = {
+    "amortisation": r"^amortisation of intangible assets$",
+    "impairment": r"^impairment of intangible assets$",
+}
+MIX = mix.for_club("newcastle")
 REVENUE_EX_NOTE = (
     "La nota 4 (pág. 35) desglosa el turnover en matchday, media, UEFA, commercial y other "
     "income (créditos fiscales de I+D, subvenciones e international fees): no hay traspasos "
@@ -89,13 +106,40 @@ SPEC = ClubSpec(
                 totals_after={"staff_costs_total": "other_pension_costs"},
                 sums=(Sum("staff_costs_total", tuple(STAFF_ROWS)),),
             ),
+            TableSpec(
+                "turnover", 35, COLUMNS, {}, region=TURNOVER_REGION, header=YEARS_HEADER,
+                rows_by_order=TURNOVER_ORDER, anchors=TURNOVER_ANCHORS,
+                sums=(Sum("total", TURNOVER_ORDER[:-1]),),
+            ),
+            TableSpec(
+                "operating", 35, COLUMNS, OPERATING_ROWS, region=OPERATING_REGION,
+                header=YEARS_HEADER, select=OPERATING_ROWS["amortisation"],
+            ),
         ),
+        links=(
+            *(LinkSum(("pnl", "turnover", year), (("turnover", "total", year),))
+              for year in COLUMNS),
+            # La cuenta da amortización y deterioro juntos, en negativo.
+            *(LinkSum(("pnl", "amortisation", year),
+                      tuple(("operating", row, year) for row in OPERATING_ROWS), sign=-1)
+              for year in COLUMNS),
+            MIX.check(),
+        ),
+        gaps=MIX.gaps(),
         figures=(
             FigureSpec("revenue_total_reported", (("pnl", "turnover"),), "2025"),
             FigureSpec("revenue_ex_player_trading", (("pnl", "turnover"),), "2025",
                        note=REVENUE_EX_NOTE),
             FigureSpec("staff_costs", (("staff", "staff_costs_total"),), "2025"),
             FigureSpec("net_result", (("pnl", "net_result"),), "2025"),
+            *MIX.figures("2025"),
+            FigureSpec("amortisation_player_registrations", (("operating", "amortisation"),),
+                       "2025", note="Amortisation of intangible assets (nota 5): los intangibles "
+                                    "son derechos de jugadores (nota 12)."),
+            FigureSpec("impairment_player_registrations", (("operating", "impairment"),), "2025",
+                       note="Impairment of intangible assets (nota 5): derechos de jugadores."),
+            FigureSpec("profit_on_player_disposals", (("pnl", "profit_disposal_players"),),
+                       "2025", note="Profit on disposal of players' registrations (cuenta)."),
         ),
     ),
 )

@@ -7,12 +7,22 @@ Páginas localizadas a mano mirando la página renderizada, en los dos documento
   2025 y 2024 en £000.
 - pág. 27, nota 4, Staff numbers and costs: "Aggregate amounts for both staff and directors",
   2025 y 2024 en £000.
+Fase 3a, en los dos documentos:
+- pág. 26, nota 2, Turnover by activity: las partidas de ingresos (mapeo en
+  config/line_items.yaml); y nota 3, Administrative expenses: amortización y deterioro de
+  registrations.
+- pág. 19, estado de flujos: "Depreciation, amortisation and impairment" es la suma de las tres
+  líneas de la nota 3 (en 2025; la de 2024 lleva además un deterioro de inmovilizado material que
+  el OCR del escaneo no lee), y "Profit on disposal of registrations" es la línea de la cuenta.
 """
 
+from pitch_to_balance_sheet.extract import mix
 from pitch_to_balance_sheet.extract.statements import (
     ClubSpec,
     DocumentSpec,
     FigureSpec,
+    Link,
+    LinkSum,
     Sum,
     TableSpec,
 )
@@ -43,6 +53,24 @@ STAFF_ROWS = {
 }
 
 
+YEARS_HEADER = r"^20(24|25)$"
+TURNOVER_ROWS = {
+    "media": r"^media$",
+    "commercial": r"^commercial$",
+    "matchday": r"^match day$",
+}
+ADMIN_ROWS = {
+    "amortisation": r"^amortisation of registrations$",
+    "impairment": r"^impairment loss on registrations$",
+    "depreciation": r"^depreciation of tangible fixed assets$",
+}
+CASHFLOW_ROWS = {
+    "dai": r"^depreciation, amortisation and impairment[ .]*$",  # el OCR del escaneo lee un punto
+    "profit_disposals": r"^profit on disposal of registrations$",
+}
+MIX = mix.for_club("liverpool")
+
+
 def document(control_index: int | None) -> DocumentSpec:
     return DocumentSpec(
         method="ocr",
@@ -69,13 +97,42 @@ def document(control_index: int | None) -> DocumentSpec:
                 totals_after={"staff_costs_total": "pension_costs"},
                 sums=(Sum("staff_costs_total", tuple(STAFF_ROWS)),),
             ),
+            TableSpec(
+                "turnover", 26, COLUMNS, TURNOVER_ROWS, header=YEARS_HEADER,
+                select=TURNOVER_ROWS["media"], totals_after={"total": "matchday"},
+                sums=(Sum("total", tuple(TURNOVER_ROWS)),),
+            ),
+            TableSpec(
+                "admin", 26, COLUMNS, ADMIN_ROWS, header=YEARS_HEADER,
+                select=ADMIN_ROWS["amortisation"],
+            ),
+            TableSpec(
+                "cashflow", 19, COLUMNS, CASHFLOW_ROWS, header=YEARS_HEADER,
+                select=CASHFLOW_ROWS["dai"],
+            ),
         ),
+        links=(
+            *(Link(("turnover", "total", year), ("pnl", "turnover", year)) for year in COLUMNS),
+            *(Link(("cashflow", "profit_disposals", year), ("pnl", "profit_disposal_players", year),
+                   sign=-1) for year in COLUMNS),
+            LinkSum(("cashflow", "dai", "2025"),
+                    tuple(("admin", row, "2025") for row in ADMIN_ROWS)),
+            MIX.check(),
+        ),
+        gaps=MIX.gaps(),
         figures=(
             FigureSpec("revenue_total_reported", (("pnl", "turnover"),), "2025"),
             FigureSpec("revenue_ex_player_trading", (("pnl", "turnover"),), "2025",
                        note=REVENUE_EX_NOTE),
             FigureSpec("staff_costs", (("staff", "staff_costs_total"),), "2025"),
             FigureSpec("net_result", (("pnl", "net_result"),), "2025"),
+            *MIX.figures("2025"),
+            FigureSpec("amortisation_player_registrations", (("admin", "amortisation"),), "2025",
+                       note="Amortisation of registrations (nota 3)."),
+            FigureSpec("impairment_player_registrations", (("admin", "impairment"),), "2025",
+                       note="Impairment loss on registrations (nota 3)."),
+            FigureSpec("profit_on_player_disposals", (("pnl", "profit_disposal_players"),),
+                       "2025", note="Profit on disposal of registrations."),
         ),
     )
 

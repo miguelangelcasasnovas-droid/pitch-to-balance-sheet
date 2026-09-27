@@ -140,3 +140,25 @@ def test_lo_que_no_es_un_zip_es_error(tmp_path):
     path.write_bytes(b"%PDF-1.7")
     with pytest.raises(IxbrlError, match="no es un ZIP"):
         read_report(path)
+
+
+def test_tabla_sin_etiquetar_del_xhtml_por_pagina_y_fila(package, tmp_path):
+    from pitch_to_balance_sheet.extract.statements import Sum, XhtmlTableSpec
+
+    table = XhtmlTableSpec(
+        "nota", 2, ("2031", "2030"), (2, 3),
+        {"revenue": r"^totale ricavi$", "staff": r"^costo del personale$",
+         "other": r"^altri costi$"},
+        select=r"^costo del personale$",
+        sums=(Sum("revenue", ("revenue",)),))
+    spec = IxbrlDocumentSpec(
+        entity=LEI, periods={"2031": CURRENT}, unit="iso4217:EUR", concepts={}, calcs=(),
+        figures=(FigureSpec("staff_costs", (("nota", "staff"),), "2031", negate=True,
+                            unit="thousands"),),
+        tables=(table,))
+    result = read_document("principal", spec, package, "sha", tmp_path)
+    (figure,) = result.figures
+    assert (figure.value, figure.unit, figure.page, figure.label) == (
+        500000, "thousands", 2, "Costo del personale")
+    assert "tabla sin etiquetar del XHTML" in figure.sources
+    assert [check.ok for check in result.checks] == [True, True]

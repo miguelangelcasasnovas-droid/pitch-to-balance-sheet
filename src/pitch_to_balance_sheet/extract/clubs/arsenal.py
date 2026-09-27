@@ -9,13 +9,21 @@ Páginas localizadas a mano mirando la página renderizada:
 
 "Group turnover" incluye en la columna de traspasos 454 de "player trading", que según la nota
 de la propia página son sobre todo ingresos por cesiones.
+
+Fase 3a:
+- pág. 32, nota 3, Group turnover: las partidas de ingresos, con el mismo player trading de 454
+  (mapeo en config/line_items.yaml).
+- pág. 33, nota 4, Operating expenses: amortización y deterioro de player registrations (el
+  deterioro solo tiene cifra en 2025).
 """
 
+from pitch_to_balance_sheet.extract import mix
 from pitch_to_balance_sheet.extract.statements import (
     ClubSpec,
     Cross,
     DocumentSpec,
     FigureSpec,
+    Link,
     Part,
     Sum,
     TableSpec,
@@ -44,6 +52,23 @@ CROSS_ROWS = tuple(PNL_ROWS)[:8]
 # La tabla de la pág. 23, de las cabeceras a "(Loss) for the financial year". Con la página
 # entera, el OCR solo lee 16 de sus cifras; con esta región, todas.
 PNL_REGION = (0.10, 0.15, 0.99, 0.50)
+TURNOVER_ROWS = {
+    "gate": r"^gate and other match day revenues$",
+    "broadcasting": r"^broadcasting$",
+    "commercial": r"^commercial$",
+    "property": r"^property$",
+    "player_trading": r"^player trading$",
+}
+OPEX_ROWS = {
+    "amortisation": r"^amortisation of player registrations$",
+    "impairment": r"^impairment of player registrations \(see note 2\)$",
+    "depreciation": r"^depreciation and impairment charges \(less amortisation of grants\)$",
+    "dai_total": r"^total depreciation, amortisation and impairment$",
+    "staff": r"^staff costs \(see note 6\)$",
+    "other": r"^other operating charges$",
+    "total": r"^total operating expenses$",
+}
+MIX = mix.for_club("arsenal")
 STAFF_ROWS = {
     "wages_and_salaries": r"^wages and salaries$",
     "social_security_costs": r"^social security costs$",
@@ -84,7 +109,25 @@ SPEC = ClubSpec(
                 totals_after={"staff_costs_total": "other_pension_costs"},
                 sums=(Sum("staff_costs_total", tuple(STAFF_ROWS)),),
             ),
+            TableSpec(
+                "turnover", 32, ("2025", "2024"), TURNOVER_ROWS, select=TURNOVER_ROWS["gate"],
+                totals_after={"total": "player_trading"},
+                sums=(Sum("total", tuple(TURNOVER_ROWS)),),
+            ),
+            TableSpec(
+                "opex", 33, ("2025", "2024"), OPEX_ROWS, select=OPEX_ROWS["amortisation"],
+                sums=(Sum("dai_total", ("amortisation", "impairment", "depreciation"), ("2025",)),
+                      Sum("total", ("dai_total", "staff", "other"))),
+            ),
         ),
+        links=(
+            Link(("turnover", "total", "2025"), ("pnl", "group_turnover", "total_2025")),
+            # El player trading de la nota 3 es la columna de traspasos de la cuenta.
+            Link(("turnover", "player_trading", "2025"), ("pnl", "group_turnover", "players_2025")),
+            Link(("opex", "total", "2025"), ("pnl", "operating_expenses", "total_2025"), sign=-1),
+            MIX.check(),
+        ),
+        gaps=MIX.gaps(),
         figures=(
             FigureSpec("revenue_total_reported", (("pnl", "group_turnover"),), "total_2025",
                        note="Incluye 454 de player trading (sobre todo cesiones), en la columna "
@@ -97,6 +140,14 @@ SPEC = ClubSpec(
                             "todo cesiones). Regla de la sección 9 del plan."),
             FigureSpec("staff_costs", (("staff", "staff_costs_total"),), "2025"),
             FigureSpec("net_result", (("pnl", "net_result"),), "total_2025"),
+            *MIX.figures("2025"),
+            FigureSpec("amortisation_player_registrations", (("opex", "amortisation"),), "2025",
+                       note="Amortisation of player registrations (nota 4)."),
+            FigureSpec("impairment_player_registrations", (("opex", "impairment"),), "2025",
+                       note="Impairment of player registrations (nota 4), excepcional según la "
+                            "nota 2."),
+            FigureSpec("profit_on_player_disposals", (("pnl", "profit_disposal_players"),),
+                       "total_2025", note="Profit on disposal of player registrations."),
         ),
     ),
 )

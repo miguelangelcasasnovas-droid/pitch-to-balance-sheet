@@ -160,7 +160,7 @@ def parse_amount(raw: str, thousands: str = ",") -> Amount | None:
 
 
 def normalize_label(text: str) -> str:
-    text = unicodedata.normalize("NFKD", text)
+    text = unicodedata.normalize("NFKD", text.replace("ß", "ss"))
     text = "".join(c for c in text if not unicodedata.combining(c)).lower()
     text = re.sub(r"[’'‘`´]", "", text)
     text = re.sub(r"\.{2,}", " ", text)  # puntos de relleno: "Revenue ........ 4 666,514"
@@ -193,6 +193,23 @@ def in_region(observations: list[Observation], region, width: float, height: flo
             if x1 <= (o.box[0] + o.box[2]) / 2 <= x2 and y1 <= o.center_y <= y2]
 
 
+def _touching(tokens: list[Token]) -> list[Token]:
+    """Une los trozos de una palabra espaciada letra a letra: pdfplumber lee "2024/2025" con
+    las letras separadas como "2 0 2 4 /2 0 2 5", con trozos que se tocan. Dos palabras de
+    verdad llevan un espacio entre medias y no se unen."""
+    joined: list[Token] = []
+    for token in tokens:
+        if joined:
+            previous = joined[-1]
+            char = (previous.x2 - previous.x1) / max(len(previous.text), 1)
+            if token.x1 - previous.x2 <= 0.25 * char:
+                joined[-1] = Token(previous.text + token.text, previous.x1, token.x2,
+                                   min(previous.confidence, token.confidence))
+                continue
+        joined.append(token)
+    return joined
+
+
 def read_tables(rows: list[Row], header: str = UNIT_HEADER, thousands: str = ",",
                 join_header_lines: bool = False) -> list[Table]:
     """Tablas de la página: cada una empieza en una fila con cabeceras de columna.
@@ -208,9 +225,9 @@ def read_tables(rows: list[Row], header: str = UNIT_HEADER, thousands: str = ","
         if skip:
             skip = False
             continue
-        tokens = row.tokens()
+        tokens = _touching(row.tokens())
         headers = [token for token in tokens if header_pattern.fullmatch(token.text)]
-        following = rows[index + 1].tokens() if index + 1 < len(rows) else []
+        following = _touching(rows[index + 1].tokens()) if index + 1 < len(rows) else []
         if (headers and join_header_lines and following
                 and all(header_pattern.fullmatch(token.text) for token in following)):
             tokens = sorted(tokens + following, key=lambda token: token.x2)
