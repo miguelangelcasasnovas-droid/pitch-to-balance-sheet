@@ -5,25 +5,38 @@ import hashlib
 import pytest
 import requests
 
-from pitch_to_balance_sheet.sources.web import ATTEMPTS, WebDownloadError, download_pdf
+from pitch_to_balance_sheet.sources.web import (
+    ATTEMPTS,
+    WebDownloadError,
+    download_pdf,
+    robots_allows,
+)
 
-URL = "https://ejemplo.invalid/cuentas.pdf"
+URL = "https://ejemplo.invalid/docs/cuentas.pdf"
 PDF = b"%PDF-1.7\ncontenido de prueba"
 
 
 class FakeResponse:
-    def __init__(self, status_code=200, content=b""):
+    def __init__(self, status_code=200, content=b"", text=""):
         self.status_code = status_code
         self.content = content
+        self.text = text
 
 
 class FakeSession:
-    def __init__(self, responses):
+    """Responde al robots.txt con `robots` y al resto con las respuestas en orden."""
+
+    def __init__(self, responses, robots=None):
         self.responses = list(responses)
-        self.calls = 0
+        self.robots = robots if robots is not None else FakeResponse(404)
+        self.calls = []
 
     def get(self, url, headers=None, timeout=None):
-        self.calls += 1
+        self.calls.append(url)
+        if url.endswith("/robots.txt"):
+            if isinstance(self.robots, Exception):
+                raise self.robots
+            return self.robots
         response = self.responses.pop(0)
         if isinstance(response, Exception):
             raise response
@@ -36,13 +49,14 @@ def test_descarga_el_pdf_y_devuelve_su_entrada_del_manifiesto(tmp_path):
     assert (tmp_path / "web" / "x.pdf").read_bytes() == PDF
     assert (entry.url, entry.sha256, entry.bytes) == (URL, hashlib.sha256(PDF).hexdigest(),
                                                       len(PDF))
+    assert session.calls == ["https://ejemplo.invalid/robots.txt", URL]
 
 
 def test_404_es_error_sin_reintentar(tmp_path):
     session = FakeSession([FakeResponse(404)])
     with pytest.raises(WebDownloadError, match="HTTP 404"):
         download_pdf(URL, tmp_path, "web/x.pdf", session=session)
-    assert session.calls == 1
+    assert session.calls.count(URL) == 1
 
 
 def test_errores_de_servidor_se_reintentan_y_al_final_es_error(tmp_path):
@@ -58,3 +72,27 @@ def test_lo_que_no_es_un_pdf_es_error(tmp_path):
     with pytest.raises(WebDownloadError, match="no devolvió un PDF"):
         download_pdf(URL, tmp_path, "web/x.pdf", session=session)
     assert not (tmp_path / "web" / "x.pdf").exists()
+
+
+@pytest.mark.parametrize(
+    ("robots", "allowed", "reason"),
+    [
+        (FakeResponse(404), True, "sin restricciones"),
+        (FakeResponse(403), True, "sin restricciones"),  # RFC 9309: 4xx, sin restricciones
+        (FakeResponse(503), False, "se supone que todo está prohibido"),
+        (requests.ConnectionError("sin red"), False, "no se pudo leer"),
+        (FakeResponse(200, text="User-agent: *\nDisallow: /docs/\n"), False, "no permite"),
+        (FakeResponse(200, text="User-agent: *\nDisallow: /privado/\n"), True, "permite"),
+    ],
+)
+def test_robots_txt(robots, allowed, reason):
+    ok, why = robots_allows(URL, FakeSession([], robots=robots))
+    assert ok is allowed and reason in why
+
+
+def test_si_robots_txt_no_lo_permite_no_se_descarga(tmp_path):
+    session = FakeSession([FakeResponse(content=PDF)],
+                          robots=FakeResponse(200, text="User-agent: *\nDisallow: /\n"))
+    with pytest.raises(WebDownloadError, match="hay que descargarlo a mano"):
+        download_pdf(URL, tmp_path, "web/x.pdf", session=session)
+    assert URL not in session.calls

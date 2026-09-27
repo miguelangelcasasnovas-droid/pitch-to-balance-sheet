@@ -42,6 +42,6 @@ uv run python -m pitch_to_balance_sheet download          # cuentas de Companies
 uv run python -m pitch_to_balance_sheet download-web      # PDFs de la web de los clubes
 uv run python -m pitch_to_balance_sheet register-manual   # PDFs manuales al manifiesto
 uv run python -m pitch_to_balance_sheet text-layer        # capa de texto de los PDFs locales
-uv run python -m pitch_to_balance_sheet ocr --club X      # rehace el OCR de un club (macOS)
 uv run python -m pitch_to_balance_sheet extract [--club X]  # cifras, cuadres y recortes
+uv run python -m pitch_to_balance_sheet extract --reocr     # ídem, volviendo a pasar Vision
 ```

@@ -33,9 +33,8 @@ PNL_ROWS = {
     "tax": r"^tax on profit/\(loss\)$",
     "net_result": r"^profit/\(loss\) for the financial year$",
     "other_comprehensive_income": r"^other comprehensive income for the period$",
-    # "Total comprehensive income/(loss) for the year attributable to the shareholders" /
-    # "of the Company": las cifras van en la segunda línea.
-    "total_comprehensive_income": r"^of the company$",
+    # Rótulo en dos líneas; las cifras van en la segunda.
+    "total_comprehensive_income": r"^total comprehensive income.* of the company$",
 }
 STAFF_ROWS = {
     "wages_and_salaries": r"^wages and salaries$",
@@ -72,12 +71,19 @@ def document(control_index: int | None) -> DocumentSpec:
             ),
         ),
         figures=(
-            FigureSpec("revenue_total", (("pnl", "turnover"),), "2025"),
+            FigureSpec("revenue_total_reported", (("pnl", "turnover"),), "2025"),
+            FigureSpec("revenue_ex_player_trading", (("pnl", "turnover"),), "2025",
+                       note=REVENUE_EX_NOTE),
             FigureSpec("staff_costs", (("staff", "staff_costs_total"),), "2025"),
             FigureSpec("net_result", (("pnl", "net_result"),), "2025"),
         ),
     )
 
+
+REVENUE_EX_NOTE = (
+    "La nota 2 (pág. 26) desglosa el turnover en media, commercial y match day: no hay "
+    "traspasos ni cesiones."
+)
 
 SPEC = ClubSpec(
     club_id="liverpool",

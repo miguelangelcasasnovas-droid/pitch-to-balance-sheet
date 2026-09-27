@@ -4,8 +4,8 @@
 - download-web: PDFs de la web de los clubes (fuentes url), a data/raw/web/.
 - register-manual: PDFs descargados a mano, al manifiesto.
 - text-layer: capa de texto de los PDFs locales, a data/processed/text_layer_<temporada>.csv.
-- ocr: OCR de las páginas que usa el extractor de un club (solo macOS).
 - extract: ingresos, gastos de personal y resultado neto de cada club, con cuadres y recortes.
+  Lee el OCR guardado; con --reocr vuelve a pasar Apple Vision (solo macOS).
 
 Si un paso falla, sale con código 1 y dice por qué.
 """
@@ -23,7 +23,6 @@ from dotenv import load_dotenv
 
 from pitch_to_balance_sheet import manifest
 from pitch_to_balance_sheet.config import (
-    INTERIM_DIR,
     PROCESSED_DIR,
     RAW_DIR,
     ROOT,
@@ -31,7 +30,6 @@ from pitch_to_balance_sheet.config import (
     load_clubs,
     season_slug,
 )
-from pitch_to_balance_sheet.extract import ocr as ocr_lib
 from pitch_to_balance_sheet.extract import run
 from pitch_to_balance_sheet.extract.clubs import SPECS
 from pitch_to_balance_sheet.extract.text_layer import KEYWORDS, measure
@@ -43,7 +41,7 @@ from pitch_to_balance_sheet.sources.companies_house import (
     download_accounts,
 )
 from pitch_to_balance_sheet.sources.config import load_sources
-from pitch_to_balance_sheet.sources.local import MANIFEST, document_file, filings_path, local_pdf
+from pitch_to_balance_sheet.sources.local import MANIFEST, filings_path, local_pdf
 
 log = logging.getLogger(__name__)
 
@@ -232,31 +230,7 @@ def text_layer(season: str) -> int:
     return 1 if errors else 0
 
 
-def ocr(season: str, club_id: str) -> int:
-    """Rehace el OCR de las páginas que usa el extractor del club (fuente principal y controles)."""
-    spec = SPECS.get(club_id)
-    if spec is None:
-        print(f"error: no hay extractor para {club_id}", file=sys.stderr)
-        return 1
-    documents = [d for d in (spec.primary, *spec.controls) if d.method == "ocr"]
-    if not documents:
-        print(f"error: {club_id} no usa OCR: se extrae del texto del PDF", file=sys.stderr)
-        return 1
-    try:
-        for document in documents:
-            _, pdf, sha256 = document_file(season, club_id, document.control_index)
-            for page, region in sorted({(t.page, t.region) for t in document.tables}):
-                paths = ocr_lib.ocr_page(RAW_DIR / pdf, sha256, page, INTERIM_DIR / "ocr",
-                                         region)
-                log.info("%s: %s pág. %d -> %s", club_id, pdf, page,
-                         paths["json"].relative_to(ROOT))
-    except (manifest.ManifestError, ocr_lib.OcrError) as exc:
-        print(f"error: {club_id}: {exc}", file=sys.stderr)
-        return 1
-    return 0
-
-
-def extract(season: str, club_id: str | None) -> int:
+def extract(season: str, club_id: str | None, reocr: bool = False) -> int:
     """Tres cifras por club, con cuadres, controles y recortes. Un club en error no para a
     los demás."""
     if club_id is not None and club_id not in SPECS:
@@ -266,12 +240,13 @@ def extract(season: str, club_id: str | None) -> int:
     for spec in SPECS.values():
         if club_id is not None and spec.club_id != club_id:
             continue
-        result = run.extract_club(season, spec)
+        result = run.extract_club(season, spec, reocr)
         results.append(result)
         print(f"\n== {spec.club_id} · {result.source or '—'} · {result.pdf or '—'}")
         for figure in result.figures:
-            print(f"  {figure.concept}: {figure.value:,} ({spec.unit}, {spec.currency}) · "
-                  f"pág. {figure.page} · {figure.label!r} [{figure.column}] · {figure.ocr_note}"
+            print(f"  {figure.concept}: {figure.value:,} ({spec.unit}, {spec.currency})"
+                  + (" · derivada" if figure.is_derived else "")
+                  + f" · {figure.sources} · {figure.ocr_note}"
                   + (f" · {result.crops[figure.concept]}" if figure.concept in result.crops
                      else ""))
             if figure.note:
@@ -302,14 +277,15 @@ def main(argv: list[str] | None = None) -> int:
         ("download-web", "descarga los PDFs de la web de los clubes (fuentes url)"),
         ("register-manual", "registra en el manifiesto los PDFs descargados a mano"),
         ("text-layer", "mide la capa de texto de los PDFs locales de config/sources.yaml"),
-        ("ocr", "rehace el OCR de las páginas que usa el extractor de un club"),
         ("extract", "ingresos, gastos de personal y resultado neto, con cuadres y recortes"),
     ):
         command = commands.add_parser(name, help=help_text)
         command.add_argument("--season", default="2024/25", help="temporada, p. ej. 2024/25")
-        if name in ("ocr", "extract"):
-            command.add_argument("--club", required=name == "ocr",
-                                 help="club_id, p. ej. chelsea (en extract, todos si se omite)")
+        if name == "extract":
+            command.add_argument("--club", help="club_id, p. ej. chelsea (todos si se omite)")
+            command.add_argument("--reocr", action="store_true",
+                                 help="vuelve a pasar Apple Vision (solo macOS); sin esta opción "
+                                      "se lee el OCR guardado en data/interim/ocr/")
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(message)s", stream=sys.stderr)
     try:
@@ -318,10 +294,8 @@ def main(argv: list[str] | None = None) -> int:
     except ValueError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
-    if args.command == "ocr":
-        return ocr(args.season, args.club)
     if args.command == "extract":
-        return extract(args.season, args.club)
+        return extract(args.season, args.club, args.reocr)
     commands_by_name = {
         "download": download,
         "download-web": download_web,

@@ -17,6 +17,7 @@ from pitch_to_balance_sheet.extract.statements import (
     DocumentSpec,
     FigureSpec,
     Link,
+    Part,
     Sum,
     TableSpec,
 )
@@ -41,8 +42,11 @@ PNL_SUMS = (
 )
 REVENUE_NOTE = (
     "Total publicado, que incluye «Proventi da gestione diritti calciatori» (109.725): ingresos "
-    "por traspasos de jugadores. La sección 9 del plan dice que los ingresos los excluyen: "
-    "decisión pendiente."
+    "por traspasos y cesiones de jugadores."
+)
+REVENUE_EX_NOTE = (
+    "Totale ricavi e proventi menos Proventi da gestione diritti calciatori. Regla de la "
+    "sección 9 del plan."
 )
 STAFF_NOTE = (
     "Suma de los totales de las notas 40 (personale tesserato) y 41 (altro personale): la "
@@ -144,7 +148,12 @@ def document(language: str, control_index: int | None) -> DocumentSpec:
             for year in YEARS
         ),
         figures=(
-            FigureSpec("revenue_total", (("pnl", "total_revenue"),), "2025", note=REVENUE_NOTE),
+            FigureSpec("revenue_total_reported", (("pnl", "total_revenue"),), "2025",
+                       note=REVENUE_NOTE),
+            FigureSpec("revenue_ex_player_trading",
+                       (Part("pnl", "total_revenue"),
+                        Part("pnl", "player_rights_income", sign=-1)),
+                       "2025", note=REVENUE_EX_NOTE),
             FigureSpec("staff_costs", (("note40", "total"), ("note41", "total")), "2025",
                        note=STAFF_NOTE),
             FigureSpec("net_result", (("pnl", "net_result"),), "2025"),

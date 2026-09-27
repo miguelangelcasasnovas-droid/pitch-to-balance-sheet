@@ -7,6 +7,8 @@ coincide) queda en error con el motivo, y se sigue con el siguiente.
 import csv
 from dataclasses import dataclass, field
 
+from PIL import Image
+
 from pitch_to_balance_sheet import manifest
 from pitch_to_balance_sheet.config import (
     INTERIM_DIR,
@@ -24,11 +26,10 @@ from pitch_to_balance_sheet.extract.statements import (
     Figure,
     read_document,
 )
-from pitch_to_balance_sheet.extract.tables import crop_rows
 from pitch_to_balance_sheet.sources.local import document_file
 
 SOURCE_NAMES = {"companies_house": "Companies House", "manual": "PDF manual", "url": "web del club"}
-CONCEPTS = ("revenue_total", "staff_costs", "net_result")
+CONCEPTS = ("revenue_total_reported", "revenue_ex_player_trading", "staff_costs", "net_result")
 
 
 @dataclass
@@ -50,12 +51,37 @@ class ClubResult:
         return [check for check in self.checks if not check.ok]
 
 
-def extract_club(season: str, spec: ClubSpec) -> ClubResult:
+def crop_figure(figure: Figure, path) -> None:
+    """Recorte de cada fila que entra en la cifra (sin repetir), apiladas si son varias."""
+    crops, seen = [], set()
+    for component in figure.components:
+        key = (component.image_path, id(component.row))
+        if key in seen:
+            continue
+        seen.add(key)
+        x1, y1, x2, y2 = component.row.box
+        with Image.open(component.image_path) as image:
+            crops.append(image.crop((max(int(x1) - 4, 0), max(int(y1) - 4, 0),
+                                     min(int(x2) + 4, image.width),
+                                     min(int(y2) + 4, image.height))).convert("L"))
+    gap = 12
+    result = Image.new("L", (max(c.width for c in crops),
+                             sum(c.height for c in crops) + gap * (len(crops) - 1)), 255)
+    y = 0
+    for crop in crops:
+        result.paste(crop, (0, y))
+        y += crop.height + gap
+    path.parent.mkdir(parents=True, exist_ok=True)
+    result.save(path)
+
+
+def extract_club(season: str, spec: ClubSpec, reocr: bool = False) -> ClubResult:
     result = ClubResult(spec.club_id, spec)
     try:
         source, pdf, sha256 = document_file(season, spec.club_id, None)
         result.source, result.pdf, result.sha256 = SOURCE_NAMES[source.kind], pdf, sha256
-        primary = read_document("principal", spec.primary, RAW_DIR / pdf, sha256, INTERIM_DIR)
+        primary = read_document("principal", spec.primary, RAW_DIR / pdf, sha256, INTERIM_DIR,
+                                reocr)
         result.figures = primary.figures
         result.checks = list(primary.checks)
         result.corrections = list(primary.corrections)
@@ -65,7 +91,7 @@ def extract_club(season: str, spec: ClubSpec) -> ClubResult:
                 season, spec.club_id, control.control_index)
             name = f"control: {SOURCE_NAMES[control_source.kind]}"
             other = read_document(name, control, RAW_DIR / control_pdf, control_sha,
-                                  INTERIM_DIR)
+                                  INTERIM_DIR, reocr)
             result.checks += other.checks
             result.corrections += [f"{name}: {note}" for note in other.corrections]
             twins = {figure.concept: figure for figure in other.figures}
@@ -82,7 +108,7 @@ def extract_club(season: str, spec: ClubSpec) -> ClubResult:
     slug = f"{spec.club_id}_{season_slug(season)}"
     for figure in result.figures:
         path = INTERIM_DIR / "recortes" / f"{slug}_{figure.concept}_p{figure.page}.png"
-        crop_rows(figure.image_path, list(figure.rows), path)
+        crop_figure(figure, path)
         result.crops[figure.concept] = str(path.relative_to(ROOT))
     if result.failed:
         result.error = f"{len(result.failed)} de {len(result.checks)} cuadres no cuadran"
@@ -105,6 +131,8 @@ def write_outputs(season: str, results: list[ClubResult]) -> list[str]:
                 "unit_reported": spec.unit,
                 "currency_reported": spec.currency,
                 "value_full": figure.value * spec.multiplier,
+                "is_derived": figure.is_derived,
+                "components": figure.sources,
                 "source": result.source,
                 "source_file": result.pdf,
                 "source_page": figure.page,
@@ -114,7 +142,7 @@ def write_outputs(season: str, results: list[ClubResult]) -> list[str]:
                 "extraction_method": (ocr.ENGINE if figure.method == "ocr"
                                       else "pdfplumber (texto del PDF)"),
                 "ocr_note": figure.ocr_note,
-                "ocr_raw": " + ".join(a.raw for a in figure.amounts),
+                "ocr_raw": " ; ".join(a.raw for a in figure.amounts),
                 "definition_note": figure.note,
                 "crop": result.crops.get(figure.concept, ""),
                 "status": "error" if result.error else "ok",
@@ -150,16 +178,28 @@ def summary_note(result: ClubResult) -> str:
     return "; ".join(f"{count} {name}" for name, count in result.summary.items())
 
 
+def _value(figure: Figure | None) -> str:
+    if figure is None:
+        return "—"
+    text = f"{figure.value:,}" if figure.value >= 0 else f"({-figure.value:,})"
+    return text + (" *" if figure.is_derived else "")
+
+
 def table(results: list[ClubResult]) -> str:
+    """Tabla final. Un * marca las cifras derivadas (is_derived)."""
     names = {club.club_id: club.name for club in load_clubs()}
-    lines = ["| Club | Fuente | Ingresos | Gastos de personal | Resultado neto | Moneda | Unidad | "
-             "Páginas | Cuadres | Notas de OCR |",
-             "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |"]
+    lines = ["| Club | Fuente | Ingresos publicados | Ingresos sin traspasos | "
+             "Gastos de personal | Resultado neto | Moneda | Unidad | Páginas | Cuadres | "
+             "Notas de OCR |",
+             "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |"]
     for result in results:
         by_concept = {figure.concept: figure for figure in result.figures}
         ok = not result.error
-        values = [f"{by_concept[c].value:,}" if ok and c in by_concept else "—" for c in CONCEPTS]
-        pages = " · ".join(f"{by_concept[c].page}" for c in CONCEPTS if c in by_concept) or "—"
+        values = [_value(by_concept.get(c)) if ok else "—" for c in CONCEPTS]
+        pages = " · ".join(
+            "+".join(dict.fromkeys(str(comp.page) for comp in by_concept[c].components))
+            for c in CONCEPTS if c in by_concept
+        ) or "—"
         passed = sum(check.ok for check in result.checks)
         checks = (f"OK ({passed}/{len(result.checks)})" if ok
                   else f"FALLA ({passed}/{len(result.checks)})" if result.checks else "ERROR")

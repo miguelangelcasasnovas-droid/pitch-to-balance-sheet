@@ -150,7 +150,7 @@ def test_imagen_ocr_cifra(tmp_path):
         figures=(FigureSpec("revenue_total", (("pnl", "turnover"),), "2025"),
                  FigureSpec("net_result", (("pnl", "net_result"),), "2025")),
     )
-    result = read_document("principal", spec, pdf, "fixture", tmp_path)
+    result = read_document("principal", spec, pdf, "fixture", tmp_path, reocr=True)
 
     revenue, net = result.figures
     assert (revenue.value, revenue.page, revenue.label) == (123_456, 1, "Turnover")

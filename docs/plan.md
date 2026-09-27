@@ -214,6 +214,16 @@ Ninguna cifra de club sale de estos dos informes: solo totales, cada uno citado 
 
 Cinco métricas por club y temporada, y una valoración por EV/ingresos que da un rango P25–P75 con la mediana como punto central. Los ingresos excluyen siempre la venta de jugadores.
 
+**Regla de ingresos, decidida el 27/09/2026:**
+
+- `revenue_total_reported`: los ingresos tal como los publica el club.
+- `revenue_ex_player_trading`: `revenue_total_reported` menos las líneas de traspasos o cesiones que el club incluye en sus ingresos.
+  - Si hay algo que restar, la cifra va marcada `is_derived=true`, con la fuente (página, fila y columna) de cada componente.
+  - Si el club no incluye traspasos ni cesiones en los ingresos, es la misma cifra, sin derivar, y queda anotada la prueba: la columna de traspasos de la cuenta de resultados o la nota de ingresos.
+  - Ejemplos de 2024/25: Juventus, 529.630 − 109.725 ("Proventi da gestione diritti calciatori"); Arsenal, 690,998 − 454 (player trading dentro de "Group turnover").
+- **Las métricas usan `revenue_ex_player_trading`.**
+- Cualquier cifra que se obtiene sumando o restando celdas publicadas también va marcada `is_derived=true`, con sus componentes. Por ejemplo, los gastos de personal de Juventus son la suma de los totales de las notas 40 y 41.
+
 | Métrica | Definición | Si falta un dato |
 | --- | --- | --- |
 | Mix de ingresos | matchday, broadcasting y commercial sobre ingresos totales. Premios UEFA en broadcasting | Hueco si el club no desglosa |

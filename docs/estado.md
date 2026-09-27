@@ -1,6 +1,6 @@
 # Estado del proyecto
 
-Actualizado: 26/09/2026 (fase 2c)
+Actualizado: 27/09/2026 (fase 2d)
 
 ## Fase 0: cerrada
 
@@ -148,9 +148,9 @@ Hecha el 26/09/2026 y cerrada ese mismo día con el OK del usuario, que comprob�
 6. **Rareza del propio documento:** en la pág. 17, la fila que va antes del impuesto se llama "(Loss)/profit after taxation". El extractor la trata como resultado antes de impuestos, y así cuadra.
 7. **Test:** `tests/fixtures/pagina_ocr.pdf` es una página inventada, solo imagen, con una cuenta de resultados que cuadra, un guion y paréntesis. `test_imagen_ocr_cifra` cubre imagen → OCR → cifra → cuadre. Usa Apple Vision, así que solo corre en macOS; en el CI, que es Linux, se salta. El resto de tests de OCR no hacen OCR y corren en todas partes.
 
-## Fase 2c: ingresos, gastos de personal y resultado neto 2024/25 (hecha, a falta del OK)
+## Fase 2c: ingresos, gastos de personal y resultado neto 2024/25 (cerrada)
 
-Hecha el 26/09/2026 para 8 clubes. Lazio y FC Porto siguen pendientes. No se ha convertido nada a EUR ni se ha extraído ningún otro concepto.
+Hecha el 26/09/2026 para 8 clubes y cerrada el 27/09/2026 con el OK del usuario, que revisó un recorte por club con OCR y vio en verde el CI de `612a831`. Las cifras de ingresos de esta tabla se completaron en la fase 2d con la regla de ingresos.
 
 **Resultado** (`python -m pitch_to_balance_sheet extract --season 2024/25`, exit 0), en miles de la moneda de cada club:
 
@@ -188,6 +188,57 @@ Hecha el 26/09/2026 para 8 clubes. Lazio y FC Porto siguen pendientes. No se ha 
 - **Capa de texto de los PDFs de la web** (`text-layer`): Juventus 256 de 259 (italiano) y 255 de 258 (inglés); Celtic 39 de 43; Liverpool 0 de 38, imagen.
 - **Tests:** 72, entre ellos `tests/test_statements.py`, sobre un fixture sintético con capa de texto (`tabla_texto.pdf`), que corre en el CI. El de imagen → OCR → cifra pasa por el motor completo y solo corre en macOS.
 
+## Fase 2d: regla de ingresos y cotizados que faltaban, 2024/25 (hecha, a falta del OK)
+
+Hecha el 27/09/2026. Lazio y FC Porto siguen pendientes. No se ha convertido nada a EUR ni se ha extraído ningún otro concepto.
+
+**Condiciones del usuario a las decisiones 17 a 25:**
+
+1. **Filas por orden (Newcastle, y ahora Ajax y Benfica):** si el número de filas con cifras no es el esperado, error. Ya era así, y ahora lo prueba un test.
+2. **OCR solo desde lo guardado:** `extract` lee el OCR de `data/interim/ocr/<sha256>/`, incluidas las segundas lecturas de celdas (`page-NNN[-r…]-cells.json`). Vision solo se vuelve a pasar con `--reocr`, y si falta algo guardado, error. Se quita el comando `ocr`. Tres tests comprueban, sin Vision, que sin el flag no se llama al OCR.
+   - Al crear la caché se pasó `--reocr` una vez: las 14 páginas guardadas dieron exactamente las mismas observaciones que antes. Vision es determinista con la misma imagen. La inestabilidad de Newcastle venía de cambiar el recorte en el código.
+
+**Regla de ingresos** (sección 9 del plan): `revenue_total_reported` y `revenue_ex_player_trading`, con `is_derived` y la fuente de cada componente. Las métricas usarán la segunda.
+
+**Resultado** (`python -m pitch_to_balance_sheet extract`, exit 0), en miles de la moneda de cada club. Un * marca las cifras derivadas:
+
+| Club | Fuente | Ingresos publicados | Ingresos sin traspasos | Gastos de personal | Resultado neto | Moneda | Unidad | Páginas (ingr. · personal · resultado) | Cuadres | Notas |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Arsenal | Companies House (OCR) | 690,998 | 690,544 * | 346,804 | (1,377) | GBP | miles | 23 · 34 · 23 | OK, 40/40 | Menos 454 de player trading (sobre todo cesiones); 5 cabeceras £ mal leídas; 5 guiones→cero |
+| Chelsea | Companies House (OCR) | 490,857 | 490,857 | 359,265 | (262,647) | GBP | miles | 17 · 34 · 17 | OK, 35/35 | 7 cabeceras £; 11 guiones→cero; 1 segunda lectura |
+| Liverpool | Web (OCR); control: Companies House | 702,722 | 702,722 | 427,727 | 8,273 | GBP | miles | 14 · 27 · 14 | OK, 28/28 | 2 cabeceras £; 12 segundas lecturas; 1 guion→cero |
+| Manchester City | PDF manual (texto) | 694,094 | 694,094 | 408,403 | (9,916) | GBP | miles | 20 · 37 · 20 | OK, 29/29 | 1 cifra partida por un espacio |
+| Tottenham Hotspur | Companies House (OCR) | 564,881 | 564,881 | 255,811 | (94,666) | GBP | miles | 23 · 35 · 23 | OK, 30/30 | 6 cabeceras £; 6 guiones→cero |
+| Newcastle United | Companies House (OCR) | 335,322 | 335,322 | 243,477 | 34,728 | GBP | miles | 19 · 36 · 19 | OK, 12/12 | 1 punto por coma; 2 guiones→cero; el OCR lee el rótulo de ingresos como "Turnorer" |
+| Manchester United | 20-F 2026 (texto), columna 2025 | 666,514 | 666,514 | 347,835 | (33,023) | GBP | miles | 101 · 122 · 101 | OK, 18/18 | El personal incluye 34,579 de despidos excepcionales; la nota lo da en negativo |
+| Juventus | Web en italiano (texto); control: inglés | 529,630 | 419,905 * | 244,666 * | (58,146) | EUR | miles | 149 · 175 · 149 | OK, 40/40 | Menos 109.725 de "Proventi da gestione diritti calciatori"; personal = notas 40 + 41 |
+| Borussia Dortmund | Informe anual en inglés, IFRS de grupo (texto) | 526,019 | 526,019 | 268,296 | 6,497 | EUR | miles | 126 · 161 · 126 | OK, 12/12 | Los traspasos van en "Net transfer income", fuera de los ingresos |
+| Celtic | Web (texto) | 143,597 | 143,597 | 74,763 | 33,934 | GBP | miles | 26 · 33 · 26 | OK, 10/10 | Sin correcciones |
+| Ajax | Jaarverslag (texto) | 178,129 | 178,129 | 109,110 | (37,339) | EUR | miles | 81 · 110 · 81 | OK, 14/14 | Traspasos en "Resultaat vergoedingssommen", fuera de la netto-omzet |
+| Benfica | Relatório e Contas de la SAD (texto) | 230,618 | 230,618 | 127,713 | 34,444 | EUR | miles | 118 · 159 · 118 | OK, 18/18 | Traspasos en "transações de direitos de atletas", fuera de los ingresos |
+
+- **Ingresos sin traspasos:**
+  - Derivados, con la fuente de cada componente en `data/interim/cifras_2024_25.csv` (columnas `is_derived` y `components`):
+    - Arsenal: "Group turnover" total 690,998 menos su columna de player trading, 454 (pág. 23).
+    - Juventus: "Totale ricavi e proventi" 529.630 menos "Proventi da gestione diritti calciatori" 109.725 (pág. 149).
+  - En los otros diez la cifra es la publicada, y está anotado dónde se ve que no incluye traspasos ni cesiones:
+    - Por la columna de traspasos de la cuenta de resultados: Chelsea, Man City y Tottenham.
+    - Por la nota de ingresos: Liverpool nota 2; Newcastle nota 4; Man United nota 4; Dortmund nota 16; Celtic nota 5; Ajax nota 25; Benfica nota 15.
+- **Gastos de personal derivados:** solo Juventus (notas 40 + 41, pág. 175). En Dortmund, Ajax y Benfica la nota de personal coincide con su línea de la cuenta de resultados.
+- **Cuadres:** 286 en total, todos con diferencia 0. En `data/interim/cuadres_2024_25.csv`.
+- **Recortes:** 48 en `data/interim/recortes/`, revisados los de los clubes nuevos y los de las cifras derivadas. En estas se apilan las filas de cada componente.
+- **Descargas** (`download-web`, que ahora comprueba el robots.txt según la RFC 9309):
+  - Manchester United: ir.manutd.com da 404, sin restricciones.
+  - Dortmund, Ajax y Benfica: su robots.txt permite la ruta. El de Benfica solo bloquea carpetas técnicas, búsquedas, perfil, carrito y entradas.
+  - Los cuatro PDFs tienen texto (`text-layer`).
+- **Cambios en el motor:**
+  - Cifras derivadas (`Part` con signo y columna propios).
+  - Cambio de signo de presentación (`negate`), que no cuenta como derivación.
+  - Negativos con signo menos ("-27,359").
+  - Referencias a notas entre paréntesis ("(31)").
+  - Rótulos en dos líneas unidos cuando la línea de las cifras empieza en minúscula.
+- **Tests:** 85, en verde.
+
 ## Decisiones
 
 1. **Carpeta de trabajo:** `~/football-club-finance`.
@@ -218,7 +269,7 @@ Tomadas en la fase 2b y aceptadas con el OK del usuario del 26/09/2026:
 
 También aceptados con ese OK: el PDF manual de Man City es la variante enlazada; Juventus con el italiano como fuente y el inglés como control; `en-US` en Vision; y ocrmac y pyobjc solo en macOS.
 
-Tomadas en la fase 2c, a falta del OK del usuario:
+Tomadas en la fase 2c y aceptadas por el usuario el 27/09/2026, con las dos condiciones de la fase 2d:
 
 17. **OCR sobre la región de la tabla** cuando el de la página entera pierde cifras o rótulos: Arsenal pág. 23 (de 16 cifras leídas se pasa a todas) y Newcastle pág. 19. El OCR de cada región se guarda aparte, en coordenadas de la página.
 18. **La unidad se comprueba en cada página; la moneda no.** Se exige una cabecera con forma de miles ("'000", "£000" y sus lecturas del OCR). La moneda la fija el extractor según la página renderizada, y su justificación va en `unit_basis`. Sustituye a "al menos un £ por página", que el OCR no cumple en Arsenal ni en Newcastle.
@@ -230,13 +281,30 @@ Tomadas en la fase 2c, a falta del OK del usuario:
 24. **Arsenal:** "ingresos" = "Group turnover" total, que incluye 454 de "player trading" (según el propio PDF, sobre todo cesiones). **Man City:** "gastos de personal" = total de la nota 7, que incluye 531 de pagos basados en acciones.
 25. **Juventus y Celtic en `config/clubs.yaml`,** con su cierre a 30/06 (plan, sección 6). `download` solo baja de Companies House los clubes que lo tienen como fuente en `sources.yaml`.
 
+Tomadas por el usuario el 27/09/2026:
+
+26. **Regla de ingresos** de la sección 9 del plan: `revenue_total_reported` y `revenue_ex_player_trading`, que usarán las métricas. Las cifras derivadas llevan `is_derived=true` y la fuente de cada componente.
+27. **Gastos de personal de Juventus** = notas 40 + 41, marcados `is_derived=true`.
+28. **OCR solo desde lo guardado;** Vision solo con `--reocr`.
+29. **Filas por orden:** si el número de filas no es el esperado, error.
+30. **Fuentes de la fase 2d:** Manchester United con el 20-F 2026; Dortmund con su informe IFRS de grupo; Ajax con su jaarverslag; Benfica con su R&C, comprobando antes el robots.txt.
+
+Tomadas en la fase 2d, a falta del OK del usuario:
+
+31. **Manchester United: la columna "2025" del 20-F 2026.** Ese 20-F es del ejercicio 2025/26, así que 2024/25 es su columna comparativa. La sección 5 del plan dice que la cifra de cada año sale de su propio informe, y la del año siguiente sirve de control. Ver pendientes.
+32. **Manchester United, personal = 347,835:** el total de la nota 7.1 con las indemnizaciones por despido que la nota clasifica como excepcionales (34,579); sin ellas, 313,256. La nota da los gastos en negativo, y aquí van en positivo, con el cambio de signo anotado (`negate`).
+33. **Dortmund:** de las dos contabilidades que trae el informe, las cuentas IFRS de grupo, en la versión inglesa, que es la de la URL del plan. El plan dice que la vinculante es la alemana. Ver pendientes.
+34. **Benfica:** el informe solo trae las cuentas IFRS de la propia SAD, sin consolidar.
+35. **Ajax y Benfica (nota 18): filas por orden,** porque tienen rótulos repetidos o en dos líneas. En Ajax la pérdida sale con su rótulo completo gracias a la unión de rótulos en dos líneas.
+36. **`download-web` comprueba el robots.txt** antes de descargar (RFC 9309): 4xx, sin restricciones; 5xx o fallo de red, prohibido; 200, se aplican sus reglas. Si no se permite, error y descarga manual.
+
 ## Pendientes
 
 | Pendiente | Para cuándo | Detalle |
 | --- | --- | --- |
-| OK a la fase 2c | Antes de seguir | Las cifras de la tabla y las decisiones 17 a 25 |
-| Ingresos de Juventus: ¿con o sin "Proventi da gestione diritti calciatori"? | Antes de las métricas | Según la sección 9 del plan, los ingresos excluyen la venta de jugadores. El total publicado (529.630) la incluye (109.725). Restarla es un cálculo, no una cifra publicada: decide el usuario |
-| Estabilidad del OCR | Al repetir un OCR | Vision puede leer distinto con un píxel de diferencia (Newcastle). El OCR queda guardado en `data/interim/ocr/`; si se repite, los rótulos pueden cambiar, y las cifras las siguen validando los cuadres |
+| OK a la fase 2d | Antes de seguir | La tabla de 12 clubes y las decisiones 31 a 36 |
+| Manchester United: ¿20-F 2026 (columna comparativa) o 20-F 2025? | Antes de las métricas | La sección 5 del plan pide que la cifra de 2024/25 salga de su propio informe, el 20-F del ejercicio 2024/25, que no se ha buscado. Con el 20-F 2026 como fuente, ese sería el control |
+| Dortmund: ¿versión alemana como fuente? | Antes de las métricas | El plan dice que la vinculante es la alemana; se ha usado la inglesa de la URL del plan. Como con Juventus, la alemana podría ser la fuente y la inglesa el control |
 | PDF manual de Arsenal | Opcional | Si el usuario lo deja en `data/raw/manual/arsenal_2024-25.pdf`, pasa a ser la fuente principal. Hay que añadirlo a `sources.yaml` con su URL y registrarlo |
 | ESEF de Lazio 2024/25 | Antes de decidir OCR para Lazio | El club dice que está en el portal 1info, pero la dirección que da devuelve 404 |
 | Informe anual 2024/25 completo de FC Porto | Fase 2 | La CMVM vuelve después del 27/09/2026 a las 18:00. Mientras tanto solo hay el comunicado de resultados, que no trae notas. fcporto.pt respondió 200 el 26/09/2026, pero no tiene enlaces en el HTML |
@@ -246,6 +314,6 @@ El resto de comprobaciones de la fase 2 está en la sección 7.1 y en los riesgo
 
 ## Siguiente paso
 
-1. El usuario revisa la tabla de la fase 2c y las decisiones 17 a 25, y decide sobre los ingresos de Juventus.
-2. Con el OK: los cotizados que faltan (Manchester United, Dortmund, Ajax y Benfica) y, cuando haya fuente, Lazio y FC Porto.
-3. Después del 27/09/2026 a las 18:00, volver a la CMVM para buscar el informe anual 2024/25 de FC Porto.
+1. El usuario revisa la tabla de 12 clubes y las decisiones 31 a 36, y decide sobre la fuente de Manchester United y la versión de Dortmund.
+2. Después del 27/09/2026 a las 18:00, volver a la CMVM para buscar el informe anual 2024/25 de FC Porto; y el ESEF de Lazio.
+3. Con los 14 clubes: conversión a EUR con los tipos del BCE (sección 5 del plan) y tabla consolidada.

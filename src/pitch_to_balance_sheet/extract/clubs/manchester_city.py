@@ -38,6 +38,11 @@ STAFF_ROWS = {
     "staff_costs_total": r"^total$",
 }
 
+REVENUE_EX_NOTE = (
+    "La cuenta de resultados (pág. 20) separa la columna de traspasos y amortización, y en "
+    "Revenue esa columna es un guion: no hay traspasos ni cesiones."
+)
+
 SPEC = ClubSpec(
     club_id="manchester_city",
     currency="GBP",
@@ -67,7 +72,9 @@ SPEC = ClubSpec(
             ),
         ),
         figures=(
-            FigureSpec("revenue_total", (("pnl", "revenue"),), "total_2025"),
+            FigureSpec("revenue_total_reported", (("pnl", "revenue"),), "total_2025"),
+            FigureSpec("revenue_ex_player_trading", (("pnl", "revenue"),), "total_2025",
+                       note=REVENUE_EX_NOTE),
             FigureSpec("staff_costs", (("staff", "staff_costs_total"),), "2025",
                        note="Incluye 531 de pagos basados en acciones."),
             FigureSpec("net_result", (("pnl", "net_result"),), "total_2025"),

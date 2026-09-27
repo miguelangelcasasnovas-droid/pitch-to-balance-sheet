@@ -46,3 +46,24 @@ clubs:
     entity: Celtic plc
     companies_house_number: "SC003487"  # plan, sección 7.1; sus cuentas no se bajan de ahí
     fiscal_year_end: "06-30"
+  # Fuente: docs/plan.md, sección 6 (entidad y "Todos cierran el 30 de junio").
+  - club_id: manchester_united
+    name: Manchester United
+    entity: Manchester United plc
+    companies_house_number: null
+    fiscal_year_end: "06-30"
+  - club_id: borussia_dortmund
+    name: Borussia Dortmund
+    entity: Borussia Dortmund GmbH & Co. KGaA
+    companies_house_number: null
+    fiscal_year_end: "06-30"
+  - club_id: ajax
+    name: Ajax
+    entity: AFC Ajax NV
+    companies_house_number: null
+    fiscal_year_end: "06-30"
+  - club_id: benfica
+    name: Benfica
+    entity: Sport Lisboa e Benfica - Futebol, SAD
+    companies_house_number: null
+    fiscal_year_end: "06-30"

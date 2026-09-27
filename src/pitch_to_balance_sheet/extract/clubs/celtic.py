@@ -38,6 +38,12 @@ STAFF_ROWS = {
     "other_pension_costs": r"^other pension costs$",
 }
 
+REVENUE_EX_NOTE = (
+    "La nota 5 (pág. 32) desglosa los ingresos en football and stadium operations, "
+    "merchandising y multimedia and other commercial activities: no hay traspasos ni "
+    "cesiones."
+)
+
 SPEC = ClubSpec(
     club_id="celtic",
     currency="GBP",
@@ -67,7 +73,9 @@ SPEC = ClubSpec(
             ),
         ),
         figures=(
-            FigureSpec("revenue_total", (("pnl", "revenue"),), "2025"),
+            FigureSpec("revenue_total_reported", (("pnl", "revenue"),), "2025"),
+            FigureSpec("revenue_ex_player_trading", (("pnl", "revenue"),), "2025",
+                       note=REVENUE_EX_NOTE),
             FigureSpec("staff_costs", (("staff", "staff_costs_total"),), "2025"),
             FigureSpec("net_result", (("pnl", "net_result"),), "2025"),
         ),

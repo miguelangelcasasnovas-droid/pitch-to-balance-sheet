@@ -16,6 +16,7 @@ from pitch_to_balance_sheet.extract.statements import (
     Cross,
     DocumentSpec,
     FigureSpec,
+    Part,
     Sum,
     TableSpec,
 )
@@ -25,9 +26,8 @@ PNL_COLUMNS = ("operations_2025", "players_2025", "total_2025",
                "operations_2024", "players_2024", "total_2024")
 TOTALS = ("total_2025", "total_2024")
 PNL_ROWS = {
-    # "Turnover of the Group including its share of" / "joint ventures": las cifras van en la
-    # segunda línea del rótulo.
-    "turnover_including_jv": r"^joint ventures$",
+    # Rótulo en dos líneas; las cifras van en la segunda.
+    "turnover_including_jv": r"^turnover of the group including its share of joint ventures$",
     "share_of_jv_turnover": r"^share of turnover of joint venture$",
     "group_turnover": r"^group turnover$",
     "operating_expenses": r"^operating expenses$",
@@ -86,9 +86,15 @@ SPEC = ClubSpec(
             ),
         ),
         figures=(
-            FigureSpec("revenue_total", (("pnl", "group_turnover"),), "total_2025",
+            FigureSpec("revenue_total_reported", (("pnl", "group_turnover"),), "total_2025",
                        note="Incluye 454 de player trading (sobre todo cesiones), en la columna "
                             "de traspasos."),
+            FigureSpec("revenue_ex_player_trading",
+                       (Part("pnl", "group_turnover"),
+                        Part("pnl", "group_turnover", "players_2025", sign=-1)),
+                       "total_2025",
+                       note="Group turnover total menos su columna de player trading (454, sobre "
+                            "todo cesiones). Regla de la sección 9 del plan."),
             FigureSpec("staff_costs", (("staff", "staff_costs_total"),), "2025"),
             FigureSpec("net_result", (("pnl", "net_result"),), "total_2025"),
         ),

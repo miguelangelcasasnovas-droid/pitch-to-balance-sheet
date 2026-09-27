@@ -26,8 +26,8 @@ PNL_ROWS = {
     "other_income": r"^other income$",
     "operating_expenses": r"^operating expenses$",
     "operating_result": r"^operating profit/\(loss\)$",
-    # "Profit on disposal of intangible" / "fixed assets": las cifras van en la segunda línea.
-    "profit_disposal_intangibles": r"^fixed assets$",
+    # Rótulo en dos líneas; las cifras van en la segunda.
+    "profit_disposal_intangibles": r"^profit on disposal of intangible fixed assets$",
     # El OCR lee "Profit/loss) from operations": el paréntesis de apertura es opcional.
     "result_from_operations": r"^profit/\(?loss\) from operations$",
     "finance_income": r"^finance income$",
@@ -42,6 +42,11 @@ STAFF_ROWS = {
     "social_security_costs": r"^social security costs$",
     "other_pension_costs": r"^other pension costs",
 }
+
+REVENUE_EX_NOTE = (
+    "La cuenta de resultados (pág. 23) separa la columna de football trading, y en Revenue "
+    "esa columna es un guion: no hay traspasos ni cesiones."
+)
 
 SPEC = ClubSpec(
     club_id="tottenham",
@@ -79,7 +84,9 @@ SPEC = ClubSpec(
             ),
         ),
         figures=(
-            FigureSpec("revenue_total", (("pnl", "revenue"),), "total_2025"),
+            FigureSpec("revenue_total_reported", (("pnl", "revenue"),), "total_2025"),
+            FigureSpec("revenue_ex_player_trading", (("pnl", "revenue"),), "total_2025",
+                       note=REVENUE_EX_NOTE),
             FigureSpec("staff_costs", (("staff", "staff_costs_total"),), "2025"),
             FigureSpec("net_result", (("pnl", "net_result"),), "total_2025"),
         ),

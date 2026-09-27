@@ -93,12 +93,25 @@ def test_fuente_manual_o_web_sin_archivo_es_error(tmp_path, kind):
         load_sources("2024/25", path)
 
 
-def test_clubs_yaml_tiene_los_seis_ingleses_juventus_y_celtic():
+def test_clubs_yaml_tiene_los_seis_ingleses_y_seis_cotizados():
     clubs = load_clubs()
     assert [club.club_id for club in clubs] == [
         "arsenal", "chelsea", "liverpool", "manchester_city", "tottenham", "newcastle",
-        "juventus", "celtic",
+        "juventus", "celtic", "manchester_united", "borussia_dortmund", "ajax", "benfica",
     ]
-    english = [club for club in clubs if club.club_id not in ("juventus", "celtic")]
+    english = clubs[:6]
     assert all(len(club.companies_house_number) == 8 for club in english)
     assert all(club.fiscal_year_end in ("05-31", "06-30") for club in clubs)
+
+
+def test_sources_yaml_tiene_las_fuentes_de_la_fase_2d():
+    sources = load_sources("2024/25")
+    expected = {
+        "manchester_united": "web/manchester_united_20-f_2026.pdf",
+        "borussia_dortmund": "web/borussia_dortmund_2024-25_en.pdf",
+        "ajax": "web/ajax_2024-25.pdf",
+        "benfica": "web/benfica_2024-25.pdf",
+    }
+    for club_id, file in expected.items():
+        assert (sources[club_id].primary.kind, sources[club_id].primary.file) == ("url", file)
+    assert sources["manchester_united"].primary.url.endswith("2026-mu-plc-form-20-f.pdf")

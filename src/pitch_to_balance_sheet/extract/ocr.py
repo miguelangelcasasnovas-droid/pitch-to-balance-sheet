@@ -9,6 +9,8 @@
   la imagen de cada celda que quedó vacía: sin tinta, sigue vacía; un trazo corto es un guion
   (cero); otra cosa pasa a una segunda pasada de OCR solo sobre la celda y, si tampoco se lee,
   o si el documento no admite OCR, error.
+- Vision solo se llama con --reocr. Sin él, la extracción lee el OCR guardado, también el de las
+  segundas lecturas de celdas (page-NNN[-r...]-cells.json), y si falta algo, error.
 """
 
 import json
@@ -68,8 +70,35 @@ def text_height(observations: list[Observation]) -> float:
     return median(o.height for o in observations)
 
 
+class CellReader:
+    """Segunda lectura de celdas, guardada en un JSON por página (o región).
+
+    Con allow_vision (--reocr) se pasa Vision y se guarda; sin él, solo se lee lo guardado.
+    """
+
+    def __init__(self, path: Path, allow_vision: bool):
+        self.path = path
+        self.allow_vision = allow_vision
+        self.cache = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+
+    def read(self, image: Image.Image, box: tuple[int, int, int, int]) -> list[Observation]:
+        key = ",".join(str(v) for v in box)
+        if self.allow_vision:
+            observations = recognize(image)
+            self.cache[key] = [asdict(o) for o in observations]
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            self.path.write_text(json.dumps(self.cache, ensure_ascii=False, indent=1),
+                                 encoding="utf-8")
+            return observations
+        if key not in self.cache:
+            raise OcrError(f"no hay segunda lectura guardada de la celda {box} en "
+                           f"{self.path.name}. Para pasar Vision, ejecuta con --reocr")
+        return [Observation(o["text"], o["confidence"], tuple(o["box"]))
+                for o in self.cache[key]]
+
+
 def read_cell(image: Image.Image, box: tuple[int, int, int, int], text_height: float,
-              allow_ocr: bool = True) -> Amount | None:
+              allow_ocr: bool = True, reader: CellReader | None = None) -> Amount | None:
     """Lee en la imagen una celda que quedó vacía. None si no tiene tinta."""
     crop = image.crop(box).convert("L")
     ink = crop.point(lambda value: 255 if value < INK_THRESHOLD else 0)
@@ -108,9 +137,11 @@ def read_cell(image: Image.Image, box: tuple[int, int, int, int], text_height: f
         return Amount(0, "-", ("guion que no se leyó, detectado en la imagen",), dash=True)
     if not allow_ocr:
         raise OcrError(f"celda {box} con tinta que no está en el texto del PDF")
+    if reader is None:
+        raise OcrError(f"celda {box}: hace falta una segunda lectura y no hay dónde guardarla")
     enlarged = ImageOps.expand(crop, border=int(text_height), fill=255)
     enlarged = enlarged.resize((enlarged.width * 2, enlarged.height * 2))
-    observations = recognize(enlarged)
+    observations = reader.read(enlarged, box)
     raw = "".join(o.text for o in observations)
     amount = parse_amount(raw)
     if amount is None:
@@ -123,7 +154,8 @@ def read_cell(image: Image.Image, box: tuple[int, int, int, int], text_height: f
 
 
 def fill_missing_cells(table: Table, image: Image.Image, text_height: float,
-                       allow_ocr: bool = True, rows: list[TableRow] | None = None) -> None:
+                       allow_ocr: bool = True, rows: list[TableRow] | None = None,
+                       reader: CellReader | None = None) -> None:
     """Completa las celdas vacías de las filas indicadas (todas si no se indican) que tienen
     algún importe."""
     for table_row in table.rows if rows is None else rows:
@@ -132,7 +164,7 @@ def fill_missing_cells(table: Table, image: Image.Image, text_height: float,
         for column in range(len(table.column_x2)):
             if column not in table_row.amounts:
                 amount = read_cell(image, table.cell_box(table_row, column, text_height),
-                                   text_height, allow_ocr)
+                                   text_height, allow_ocr, reader)
                 if amount is not None:
                     table_row.amounts[column] = amount
         table_row.amounts = dict(sorted(table_row.amounts.items()))
@@ -147,7 +179,7 @@ def page_paths(folder: Path, page: int, region=FULL_PAGE) -> dict[str, Path]:
     ocr_stem = stem if tuple(region) == FULL_PAGE else (
         stem + "-r" + "-".join(f"{round(v * 1000):04d}" for v in region))
     return {"png": folder / f"{stem}.png", "json": folder / f"{ocr_stem}.json",
-            "txt": folder / f"{ocr_stem}.txt"}
+            "txt": folder / f"{ocr_stem}.txt", "cells": folder / f"{ocr_stem}-cells.json"}
 
 
 def ocr_page(pdf_path: Path, sha256: str, page: int, out_dir: Path,

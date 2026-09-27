@@ -87,11 +87,30 @@ class TableSpec:
 
 
 @dataclass(frozen=True)
+class Part:
+    """Una celda que entra en una cifra: se suma (sign=1) o se resta (sign=-1)."""
+
+    table: str
+    row: str
+    column: str | None = None  # la de la cifra si no se indica
+    sign: int = 1
+
+
+@dataclass(frozen=True)
 class FigureSpec:
+    """Una cifra. Con una sola parte es la celda tal cual; con varias, o con alguna restada, es
+    una cifra derivada (is_derived) y cada parte queda como componente con su fuente."""
+
     concept: str
-    parts: tuple[tuple[str, str], ...]  # (tabla, fila): una, o varias que se suman
+    parts: tuple  # Part, o (tabla, fila) como atajo
     column: str
     note: str = ""  # observación sobre la definición
+    # El informe da el gasto en negativo y aquí va en positivo: es un cambio de signo de
+    # presentación, no una cifra derivada.
+    negate: bool = False
+
+    def resolved(self) -> tuple[Part, ...]:
+        return tuple(p if isinstance(p, Part) else Part(*p) for p in self.parts)
 
 
 @dataclass(frozen=True)
@@ -136,17 +155,55 @@ class Check:
 
 
 @dataclass(frozen=True)
-class Figure:
-    concept: str
+class Component:
     page: int
     label: str
     column: str
-    value: int
-    amounts: tuple[Amount, ...]
-    rows: tuple  # filas de la imagen, para el recorte
+    sign: int
+    amount: Amount
+    row: object  # fila de la imagen, para el recorte
     image_path: Path
+
+
+@dataclass(frozen=True)
+class Figure:
+    concept: str
+    column: str
+    value: int
+    components: tuple[Component, ...]
     method: str
     note: str
+    negated: bool = False
+
+    @property
+    def is_derived(self) -> bool:
+        return len(self.components) > 1 or any(c.sign < 0 for c in self.components)
+
+    @property
+    def page(self) -> int:
+        return self.components[0].page
+
+    @property
+    def label(self) -> str:
+        text = ""
+        for index, c in enumerate(self.components):
+            operator = ("− " if c.sign < 0 else "") if index == 0 else (
+                " − " if c.sign < 0 else " + ")
+            text += operator + (c.label or "(total sin rótulo)")
+        return text
+
+    @property
+    def sources(self) -> str:
+        """Fuente de cada componente: página, fila, columna e importe."""
+        return " ; ".join(
+            f"{'−' if c.sign < 0 else '+'} pág. {c.page} {c.label or '(total sin rótulo)'!r} "
+            f"[{c.column}] {c.amount.value:,}"
+            for c in self.components
+        ) + (" (signo cambiado: el informe lo da en negativo)" if self.negated else "")
+
+    @property
+    def amounts(self) -> tuple[Amount, ...]:
+        return tuple(c.amount for c in self.components)
 
     @property
     def ocr_note(self) -> str:
@@ -292,23 +349,31 @@ def _corrections(loaded: dict[str, LoadedTable]) -> tuple[list[str], dict[str, i
     return notes, summary
 
 
-def _page(method: str, pdf_path: Path, sha256: str, page: int, interim: Path, region):
+def _page(method: str, pdf_path: Path, sha256: str, page: int, interim: Path, region,
+          reocr: bool):
+    """Palabras y la imagen de una página. En los documentos con OCR se lee el OCR guardado en
+    data/interim/ocr/<sha256>/; Vision solo se vuelve a pasar con reocr (--reocr)."""
     if method == "ocr":
         folder = interim / "ocr" / sha256
-        if not ocr.page_paths(folder, page, region)["json"].exists():
+        if reocr:
             ocr.ocr_page(pdf_path, sha256, page, interim / "ocr", region)
+        elif not ocr.page_paths(folder, page, region)["json"].exists():
+            raise ExtractionError(
+                f"pág. {page}: no hay OCR guardado en {folder}. Para pasar Vision, ejecuta con "
+                "--reocr"
+            )
         return ocr.load_page(folder, page, region)
     return (pdf_text.page_observations(pdf_path, page),
             pdf_text.page_image(pdf_path, sha256, page, interim / "text"))
 
 
 def read_document(name: str, spec: DocumentSpec, pdf_path: Path, sha256: str,
-                  interim: Path) -> DocumentResult:
+                  interim: Path, reocr: bool = False) -> DocumentResult:
     loaded: dict[str, LoadedTable] = {}
     for table_spec in spec.tables:
         page = table_spec.page
         observations, image_path = _page(spec.method, pdf_path, sha256, page, interim,
-                                         table_spec.region)
+                                         table_spec.region, reocr)
         if not re.search(spec.unit_evidence, " ".join(o.text for o in observations), re.I):
             raise ExtractionError(f"pág. {page}: no aparece {spec.unit_evidence!r}, así que no "
                                   "se puede confirmar la unidad")
@@ -336,32 +401,39 @@ def read_document(name: str, spec: DocumentSpec, pdf_path: Path, sha256: str,
                 rows |= rows_by_order(table, table_spec.rows_by_order, table_spec.anchors, page)
             for key, previous in table_spec.totals_after.items():
                 rows[key] = total_after(table, rows[previous], page)
+            reader = None
+            if spec.method == "ocr":
+                cells_path = ocr.page_paths(interim / "ocr" / sha256, page,
+                                            table_spec.region)["cells"]
+                reader = ocr.CellReader(cells_path, allow_vision=reocr)
             try:  # solo las filas que se usan: el resto de la página puede ser texto corrido
                 ocr.fill_missing_cells(table, image, ocr.text_height(region),
-                                       allow_ocr=spec.method == "ocr", rows=list(rows.values()))
+                                       allow_ocr=spec.method == "ocr", rows=list(rows.values()),
+                                       reader=reader)
             except ocr.OcrError as exc:
                 raise ExtractionError(f"pág. {page}: {exc}") from exc
         loaded[table_spec.name] = LoadedTable(table_spec, table, rows, image_path)
 
     checks = _checks(name, loaded, spec.links)
     figures = []
+    figure_cells = set()
     for figure_spec in spec.figures:
-        cells = [(table, key, figure_spec.column) for table, key in figure_spec.parts]
-        amounts = tuple(_amount(loaded, cell) for cell in cells)
-        rows = [loaded[table].rows[key] for table, key in figure_spec.parts]
-        tables = {loaded[table].spec.page: loaded[table] for table, _ in figure_spec.parts}
-        if len(tables) != 1:
-            raise ExtractionError(f"{figure_spec.concept}: sus partes están en varias páginas")
-        [(page, item)] = tables.items()
+        components = []
+        for part in figure_spec.resolved():
+            column = part.column or figure_spec.column
+            cell = (part.table, part.row, column)
+            figure_cells.add(cell)
+            item = loaded[part.table]
+            row = item.rows[part.row]
+            components.append(Component(item.spec.page, row.raw_label, column, part.sign,
+                                        _amount(loaded, cell), row.row, item.image_path))
+        value = sum(c.sign * c.amount.value for c in components)
         figures.append(Figure(
-            figure_spec.concept, page,
-            " + ".join(r.raw_label or "(total sin rótulo)" for r in rows), figure_spec.column,
-            sum(a.value for a in amounts), amounts, tuple(r.row for r in rows), item.image_path,
-            spec.method, figure_spec.note))
+            figure_spec.concept, figure_spec.column, -value if figure_spec.negate else value,
+            tuple(components), spec.method, figure_spec.note, figure_spec.negate))
 
     covered = {cell for check in checks if check.ok for cell in check.cells}
-    used = {cell for check in checks for cell in check.cells}
-    used |= {(table, key, f.column) for f in spec.figures for table, key in f.parts}
+    used = {cell for check in checks for cell in check.cells} | figure_cells
     for cell in sorted(used):
         if _amount(loaded, cell).dash and cell not in covered:
             raise ExtractionError(f"pág. {loaded[cell[0]].spec.page}: el guion de {cell[1]} "

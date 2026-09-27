@@ -48,6 +48,11 @@ DIRECTORS_ROWS = {
 }
 NOTE_COLUMNS = ("2025", "2024")
 
+REVENUE_EX_NOTE = (
+    "La cuenta de resultados (pág. 17) separa la columna de amortización y traspasos de "
+    "jugadores, y en Turnover esa columna es un guion: no hay traspasos ni cesiones."
+)
+
 SPEC = ClubSpec(
     club_id="chelsea",
     currency="GBP",
@@ -90,7 +95,9 @@ SPEC = ClubSpec(
             ),
         ),
         figures=(
-            FigureSpec("revenue_total", (("pnl", "turnover"),), "total_2025"),
+            FigureSpec("revenue_total_reported", (("pnl", "turnover"),), "total_2025"),
+            FigureSpec("revenue_ex_player_trading", (("pnl", "turnover"),), "total_2025",
+                       note=REVENUE_EX_NOTE),
             FigureSpec("staff_costs", (("staff", "staff_costs_total"),), "2025"),
             FigureSpec("net_result", (("pnl", "net_result"),), "total_2025"),
         ),

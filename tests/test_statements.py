@@ -1,18 +1,27 @@
-"""Motor de extracción sobre una tabla sintética con capa de texto: sin OCR, corre en el CI."""
+"""Motor de extracción sobre una tabla sintética con capa de texto: sin Vision, corre en el CI.
 
+Para probar el camino del OCR sin Vision se fabrica un "OCR guardado" con el texto del PDF y se
+sustituye ocr.recognize por un espía que cuenta las llamadas.
+"""
+
+import json
+from dataclasses import asdict
 from pathlib import Path
 
 import pytest
 
+from pitch_to_balance_sheet.extract import ocr, pdf_text
 from pitch_to_balance_sheet.extract.statements import (
     DocumentSpec,
     ExtractionError,
     FigureSpec,
     Link,
+    Part,
     Sum,
     TableSpec,
     read_document,
 )
+from pitch_to_balance_sheet.extract.tables import THOUSANDS_EVIDENCE, Observation
 
 TABLE = Path(__file__).parent / "fixtures" / "tabla_texto.pdf"
 ROWS = {
@@ -32,8 +41,9 @@ FIGURES = (
 )
 
 
-def spec(sums=GOOD_SUMS, figures=FIGURES, links=()):
-    return DocumentSpec(method="text", unit_evidence=r"£.000", links=links, figures=figures,
+def spec(sums=GOOD_SUMS, figures=FIGURES, links=(), method="text"):
+    return DocumentSpec(method=method, unit_evidence=THOUSANDS_EVIDENCE, links=links,
+                        figures=figures,
                         tables=(TableSpec("pnl", 1, ("2025", "2024"), ROWS, sums=sums),))
 
 
@@ -78,6 +88,18 @@ def test_el_mismo_guion_vale_si_su_cuadre_cuadra(tmp_path):
     assert result.figures[-1].ocr_note == "texto del PDF, sin OCR: guion→cero"
 
 
+def test_cifra_derivada_con_una_parte_restada_de_otra_columna(tmp_path):
+    figures = (FigureSpec("revenue_ex", (Part("pnl", "turnover"),
+                                         Part("pnl", "cost_of_sales", "2024", sign=-1)), "2025"),
+               FigureSpec("revenue", (("pnl", "turnover"),), "2025"))
+    derived, plain = read_document("principal", spec(figures=figures), TABLE, "fixture",
+                                   tmp_path).figures
+    assert derived.value == 1000 - (-300)
+    assert derived.is_derived and not plain.is_derived
+    assert derived.sources == ("+ pág. 1 'Turnover' [2025] 1,000 ; "
+                               "− pág. 1 'Cost of sales' [2024] -300")
+
+
 def test_cifra_suma_de_varias_filas_y_enlace_con_signo(tmp_path):
     figures = (FigureSpec("two_rows", (("pnl", "turnover"), ("pnl", "cost_of_sales")), "2025"),)
     links = (Link(("pnl", "gross_profit", "2025"), ("pnl", "net_result", "2025")),
@@ -106,11 +128,80 @@ def test_fila_que_falta_es_error(tmp_path):
         read_document("principal", missing, TABLE, "fixture", tmp_path)
 
 
-def test_las_especificaciones_de_los_ocho_clubes_se_cargan():
+def test_filas_por_orden_con_un_numero_de_filas_distinto_es_error(tmp_path):
+    def by_order(keys):
+        return DocumentSpec(method="text", unit_evidence=THOUSANDS_EVIDENCE, figures=FIGURES,
+                            tables=(TableSpec("pnl", 1, ("2025", "2024"), {}, sums=GOOD_SUMS,
+                                              rows_by_order=keys,
+                                              anchors={"turnover": r"^turnover$"}),))
+
+    result = read_document("principal", by_order(tuple(ROWS)), TABLE, "fixture", tmp_path)
+    assert all(check.ok for check in result.checks)
+    with pytest.raises(ExtractionError, match="se esperaban 4 filas con cifras y hay 5"):
+        read_document("principal", by_order(tuple(ROWS)[:4]), TABLE, "fixture", tmp_path)
+
+
+def saved_ocr(tmp_path, drop=()) -> list[Observation]:
+    """Guarda como "OCR" el texto del PDF sintético, sin pasar Vision."""
+    observations = [o for o in pdf_text.page_observations(TABLE, 1) if o.text not in drop]
+    paths = ocr.page_paths(tmp_path / "ocr" / "fixture", 1)
+    paths["png"].parent.mkdir(parents=True)
+    ocr.render_page(TABLE, 1).save(paths["png"])
+    paths["json"].write_text(json.dumps({"observations": [asdict(o) for o in observations]}),
+                             encoding="utf-8")
+    return observations
+
+
+def test_sin_reocr_se_lee_el_ocr_guardado_y_no_se_llama_a_vision(tmp_path, monkeypatch):
+    calls = []
+    monkeypatch.setattr(ocr, "recognize", lambda image: calls.append(image) or [])
+    saved_ocr(tmp_path)
+    result = read_document("principal", spec(method="ocr"), TABLE, "fixture", tmp_path)
+    assert calls == []
+    assert [f.value for f in result.figures] == [1000, 600]
+
+
+def test_sin_reocr_y_sin_ocr_guardado_es_error_y_no_se_llama_a_vision(tmp_path, monkeypatch):
+    calls = []
+    monkeypatch.setattr(ocr, "recognize", lambda image: calls.append(image) or [])
+    with pytest.raises(ExtractionError, match="ejecuta con --reocr"):
+        read_document("principal", spec(method="ocr"), TABLE, "fixture", tmp_path)
+    assert calls == []
+
+
+def test_la_segunda_lectura_de_una_celda_solo_pasa_vision_con_reocr(tmp_path, monkeypatch):
+    page = saved_ocr(tmp_path, drop={"900"})  # el "OCR" se salta el 900 de 2024
+    calls = []
+
+    def vision(image):
+        calls.append(image.size)
+        if image.width > 1000:  # la página entera
+            return page
+        return [Observation("900", 0.9, (0, 0, 60, 30))]  # la celda
+
+    monkeypatch.setattr(ocr, "recognize", vision)
+    with pytest.raises(ExtractionError, match="segunda lectura guardada.*--reocr"):
+        read_document("principal", spec(method="ocr"), TABLE, "fixture", tmp_path)
+    assert calls == []
+
+    result = read_document("principal", spec(method="ocr"), TABLE, "fixture", tmp_path,
+                           reocr=True)
+    assert len(calls) == 2  # la página y la celda
+    assert all(check.ok for check in result.checks)
+
+    calls.clear()
+    result = read_document("principal", spec(method="ocr"), TABLE, "fixture", tmp_path)
+    assert calls == []  # la celda sale de page-001-cells.json
+    turnover_2024 = [c for c in result.checks if c.column == "2024"][0]
+    assert turnover_2024.ok
+
+
+def test_las_especificaciones_de_los_clubes_se_cargan():
     from pitch_to_balance_sheet.extract.clubs import SPECS
 
-    assert sorted(SPECS) == ["arsenal", "celtic", "chelsea", "juventus", "liverpool",
-                             "manchester_city", "newcastle", "tottenham"]
+    assert {"arsenal", "celtic", "chelsea", "juventus", "liverpool", "manchester_city",
+            "newcastle", "tottenham"} <= set(SPECS)
     for club_spec in SPECS.values():
         concepts = [f.concept for f in club_spec.primary.figures]
-        assert concepts == ["revenue_total", "staff_costs", "net_result"], club_spec.club_id
+        assert concepts == ["revenue_total_reported", "revenue_ex_player_trading",
+                            "staff_costs", "net_result"], club_spec.club_id

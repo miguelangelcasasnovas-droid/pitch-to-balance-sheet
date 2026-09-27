@@ -12,10 +12,7 @@ Observation con su caja en píxeles de la página renderizada a 300 ppp.
 import re
 import unicodedata
 from dataclasses import dataclass, field
-from pathlib import Path
 from statistics import median
-
-from PIL import Image
 
 # Cabecera de miles: "£'000", "£000" y cómo lo lee a veces el OCR ("€'000", "f'000", "$'000",
 # "2'000", "·'000", "'000"...). Si el primer carácter es un dígito, tiene que ir el apóstrofo,
@@ -136,6 +133,11 @@ def parse_amount(raw: str, thousands: str = ",") -> Amount | None:
     text = raw.strip().replace(" ", "")
     if text in DASHES:
         return Amount(0, raw, dash=True)
+    if text[:1] in ("-", "−") and amount_pattern(thousands).fullmatch(text[1:]) \
+            and not text[1:].startswith("("):
+        # Negativo con signo menos delante, como en las cuentas de Dortmund ("-27,359").
+        positive = parse_amount(text[1:], thousands)
+        return Amount(-positive.value, raw, positive.fixes)
     pattern = amount_pattern(thousands)
     other = "." if thousands == "," else ","
     fixes = []
@@ -203,7 +205,17 @@ def read_tables(rows: list[Row], header: str = UNIT_HEADER, thousands: str = ","
                                 normalize_label(label)))
             continue
         if tables:
-            tables[-1].rows.append(_table_row(row, tables[-1].column_x2, thousands))
+            table_row = _table_row(row, tables[-1].column_x2, thousands)
+            previous = tables[-1].rows[-1] if tables[-1].rows else None
+            # Rótulo en dos líneas con las cifras en la segunda ("Turnover of the Group
+            # including its share of" / "joint ventures 691,572 ..."): se unen los rótulos. La
+            # fila sigue siendo la de las cifras.
+            if (previous is not None and not previous.amounts and not previous.conflict
+                    and previous.raw_label and (table_row.amounts or table_row.conflict)
+                    and table_row.raw_label[:1].islower()):
+                table_row.raw_label = f"{previous.raw_label} {table_row.raw_label}"
+                table_row.label = normalize_label(table_row.raw_label)
+            tables[-1].rows.append(table_row)
     return tables
 
 
@@ -242,30 +254,9 @@ def _table_row(row: Row, column_x2: tuple[float, ...], thousands: str) -> TableR
         else:
             label_tokens.append(token.text)
     note = None
-    if label_tokens and re.fullmatch(r"\d{1,2}(,\d{1,2})?", label_tokens[-1]):
+    # Referencia a una nota al final del rótulo: "3", "4,5" o "(31)".
+    if label_tokens and re.fullmatch(r"\d{1,2}(,\d{1,2})?|\(\d{1,2}\)", label_tokens[-1]):
         note = label_tokens.pop()
     raw_label = " ".join(label_tokens)
     return TableRow(normalize_label(raw_label), raw_label, note,
                     {} if conflict else dict(sorted(amounts.items())), row, conflict)
-
-
-def crop_rows(image_path: Path, rows: list[Row], out_path: Path, padding: int = 4) -> Path:
-    """Recorte PNG de cada fila, de la etiqueta al último importe. Si son varias, apiladas."""
-    with Image.open(image_path) as image:
-        crops = []
-        for row in rows:
-            x1, y1, x2, y2 = row.box
-            crops.append(image.crop((max(int(x1) - padding, 0), max(int(y1) - padding, 0),
-                                     min(int(x2) + padding, image.width),
-                                     min(int(y2) + padding, image.height))))
-    gap = 12
-    result = Image.new(crops[0].mode, (max(c.width for c in crops),
-                                       sum(c.height for c in crops) + gap * (len(crops) - 1)),
-                       255)
-    y = 0
-    for crop in crops:
-        result.paste(crop, (0, y))
-        y += crop.height + gap
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    result.save(out_path)
-    return out_path
