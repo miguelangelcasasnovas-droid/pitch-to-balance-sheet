@@ -8,8 +8,9 @@ etiqueta, su contexto y el id del hecho. Solo están etiquetadas las cuentas con
 138 a 145 del XHTML) y todos los contextos son de la entidad (LEI 81560036DCCA48CA0F08), sin
 dimensiones. La cuenta de resultados consolidada está en la pág. 141.
 
-Los hechos van en euros (scale 0, decimals 0). Aquí van en miles, divididos por 1.000 sin
-redondear; los cuadres se hacen en euros, con los pesos del linkbase de cálculo del emisor.
+Los hechos van en euros (scale 0, decimals 0) y así se guardan, exactos (decisión del
+usuario del 27/09/2026 y sección 5 del plan); las tablas los muestran en miles redondeados. Los
+cuadres se hacen en euros, con los pesos del linkbase de cálculo del emisor.
 Ese linkbase suma las imposte differite (4.846.836, un ingreso) con peso +1, aunque la etiqueta
 es de gasto: el resultado cuadra así, y así se comprueba.
 """
@@ -85,10 +86,10 @@ NET_NOTE = "UTILE (PERDITA) DI ESERCIZIO consolidado."
 SPEC = ClubSpec(
     club_id="lazio",
     currency="EUR",
-    unit="thousands",
-    multiplier=1000,
-    unit_basis="Unidad iso4217:EUR de los hechos iXBRL, con scale 0: euros. Se pasan a miles "
-               "dividiendo por 1.000, sin redondear.",
+    unit="units",
+    multiplier=1,
+    unit_basis="Unidad iso4217:EUR de los hechos iXBRL, con scale 0 y decimals 0: euros, "
+               "guardados tal cual.",
     primary=IxbrlDocumentSpec(
         entity=LEI,
         periods=PERIODS,

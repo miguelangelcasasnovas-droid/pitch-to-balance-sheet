@@ -5,7 +5,9 @@ la página, filas de cada tabla, relaciones de suma que tienen que cuadrar, y mo
 fijadas por el extractor.
 
 Reglas:
-- Un cuadre que no cuadra es un error. No se fuerza nada.
+- Un cuadre que no cuadra es un error. No se fuerza nada. La tolerancia es de redondeo:
+  max(1, floor(0,5 × filas sumadas)), en la unidad del documento (sección 5 del plan), y un
+  cuadre que pasa con diferencia lleva la marca "redondeo" y el número de filas.
 - Un guion leído como cero solo vale si al menos un cuadre en el que interviene cuadra.
 - Una celda vacía no es cero: si un cuadre o una cifra la necesita, es un error.
 - Un control (otro documento del mismo club) tiene que dar las mismas cifras.
@@ -36,7 +38,6 @@ from pitch_to_balance_sheet.extract.tables import (
     read_tables,
 )
 
-TOLERANCE = 1  # en la unidad del documento, por redondeo
 # Si una indemnización está dentro de staff_costs: "true", "false" o "dudoso" (las cuentas no lo
 # dicen). Vacío en los demás conceptos.
 INCLUDED_IN_STAFF_COSTS = ("", "true", "false", "dudoso")
@@ -78,6 +79,15 @@ class Link:
 
 
 @dataclass(frozen=True)
+class LinkSum:
+    """Una celda es la suma de celdas de otras tablas, p. ej. un total publicado en una nota y
+    las líneas de la cuenta de resultados que lo forman."""
+
+    total: tuple[str, str, str]  # tabla, fila, columna
+    parts: tuple[tuple[str, str, str], ...]
+
+
+@dataclass(frozen=True)
 class TableSpec:
     name: str
     page: int
@@ -90,10 +100,17 @@ class TableSpec:
     # haber exactamente esas filas, y los rótulos de anchors tienen que coincidir.
     rows_by_order: tuple[str, ...] = ()
     anchors: dict[str, str] = field(default_factory=dict)
+    # Filas con un rótulo que se repite en la página: clave -> patrón de la fila que va justo
+    # antes (p. ej. "- Owners of the parent:" después de "... attributable to:").
+    after: dict[str, str] = field(default_factory=dict)
     select: str | None = None  # patrón de una fila que identifica la tabla en la página
     header_label: str | None = None  # patrón del resto de la fila de cabecera (p. ej. ^group$)
     region: tuple[float, float, float, float] = (0.0, 0.0, 1.0, 1.0)
     header: str = UNIT_HEADER
+    join_header_lines: bool = False  # cabeceras de columna en dos líneas (tables.read_tables)
+    # Tabla cuya página no dice la unidad: la confirma un cuadre que pase contra esta otra tabla,
+    # que sí la dice. Si no hay ese cuadre, error.
+    unit_from: str | None = None
 
 
 @dataclass(frozen=True)
@@ -165,7 +182,7 @@ class DocumentSpec:
     figures: tuple[FigureSpec, ...]
     unit_evidence: str  # tiene que aparecer en el texto de cada página con tablas
     thousands: str = ","
-    links: tuple[Link, ...] = ()
+    links: tuple[Link | LinkSum, ...] = ()
     control_index: int | None = None  # None: fuente principal; n: controls[n] de sources.yaml
     # "identical": el mismo documento en otra versión (traducción, otro depósito); sus cifras
     # tienen que coincidir. "restatement": el informe del año siguiente; se marca reexpresión si
@@ -196,8 +213,7 @@ class IxbrlDocumentSpec:
     unit: str  # unidad de los hechos, p. ej. "iso4217:EUR"
     concepts: dict[str, str]  # clave -> concepto iXBRL
     calcs: tuple[Calc, ...]
-    figures: tuple[FigureSpec, ...]  # partes: ("ixbrl", clave)
-    unit_divisor: int = 1000  # de la unidad del iXBRL (euros) a la del club (miles)
+    figures: tuple[FigureSpec, ...]  # partes: ("ixbrl", clave); valores en la unidad del iXBRL
     # Perímetro: los contextos sin dimensiones, que en ESEF son las cuentas consolidadas.
     dimensions: tuple[tuple[str, str], ...] = ()
     method: str = "ixbrl"
@@ -228,14 +244,30 @@ class Check:
     reported: int
     computed: int
     cells: tuple[tuple[str, str, str], ...] = ()
+    rows: int = 1  # filas sumadas: de ellas depende la tolerancia
 
     @property
     def difference(self) -> int:
         return self.reported - self.computed
 
     @property
+    def tolerance(self) -> int:
+        """Cada fila redondeada puede desviarse ±0,5: max(1, floor(0,5 × filas))."""
+        return max(1, self.rows // 2)
+
+    @property
     def ok(self) -> bool:
-        return abs(self.difference) <= TOLERANCE
+        return abs(self.difference) <= self.tolerance
+
+    @property
+    def rounding(self) -> bool:
+        """Cuadra, pero no exacto: la diferencia es de redondeo."""
+        return self.ok and self.difference != 0
+
+    @property
+    def note(self) -> str:
+        return (f"redondeo ({self.rows} {'fila' if self.rows == 1 else 'filas'})"
+                if self.rounding else "")
 
 
 @dataclass(frozen=True)
@@ -394,6 +426,22 @@ def rows_by_order(table: Table, keys: tuple[str, ...], anchors: dict[str, str],
     return found
 
 
+def row_after(table: Table, anchor: str, pattern: str, key: str, page: int) -> TableRow:
+    """La fila que va justo después de la fila ancla, para rótulos que se repiten."""
+    anchors = [index for index, row in enumerate(table.rows) if re.search(anchor, row.label)]
+    if len(anchors) != 1:
+        raise ExtractionError(f"pág. {page}: el ancla de {key} ({anchor}) aparece "
+                              f"{len(anchors)} veces")
+    index = anchors[0] + 1
+    if index >= len(table.rows) or not re.search(pattern, table.rows[index].label):
+        found = table.rows[index].raw_label if index < len(table.rows) else "nada"
+        raise ExtractionError(f"pág. {page}: después de {anchor} viene {found!r}, que no casa "
+                              f"con la fila {key} ({pattern})")
+    if table.rows[index].conflict:
+        raise ExtractionError(f"pág. {page}: fila {key}: {table.rows[index].conflict}")
+    return table.rows[index]
+
+
 def total_after(table: Table, last: TableRow, page: int) -> TableRow:
     """La fila de total sin rótulo que va justo después de la última partida."""
     index = table.rows.index(last) + 1
@@ -424,15 +472,25 @@ def _checks(document: str, loaded: dict[str, LoadedTable], links: tuple[Link, ..
                 checks.append(Check(
                     document, page, f"{rule.total} = " + " + ".join(rule.parts), column,
                     _amount(loaded, cells[0]).value,
-                    sum(_amount(loaded, cell).value for cell in cells[1:]), cells))
+                    sum(_amount(loaded, cell).value for cell in cells[1:]), cells,
+                    len(rule.parts)))
         for rule in item.spec.cross:
             for key in rule.rows:
                 cells = tuple((name, key, column) for column in (rule.total, *rule.parts))
                 checks.append(Check(
                     document, page, f"{key}: {rule.total} = " + " + ".join(rule.parts),
                     rule.total, _amount(loaded, cells[0]).value,
-                    sum(_amount(loaded, cell).value for cell in cells[1:]), cells))
+                    sum(_amount(loaded, cell).value for cell in cells[1:]), cells,
+                    len(rule.parts)))
     for link in links:
+        if isinstance(link, LinkSum):
+            checks.append(Check(
+                document, loaded[link.total[0]].spec.page,
+                f"{'.'.join(link.total)} = " + " + ".join('.'.join(p) for p in link.parts),
+                link.total[2], _amount(loaded, link.total).value,
+                sum(_amount(loaded, part).value for part in link.parts),
+                (link.total, *link.parts), len(link.parts)))
+            continue
         checks.append(Check(
             document, loaded[link.a[0]].spec.page,
             f"{'.'.join(link.a)} = {'-' if link.sign < 0 else ''}{'.'.join(link.b)}",
@@ -495,8 +553,8 @@ def _exact(value: Decimal) -> int | Decimal:
 
 
 def read_ixbrl_document(name: str, spec: IxbrlDocumentSpec, path: Path) -> DocumentResult:
-    """Cifras y cuadres de un paquete ESEF. Los cuadres van en la unidad del iXBRL (euros);
-    las cifras, en la del club (miles), sin redondear."""
+    """Cifras y cuadres de un paquete ESEF, en la unidad del iXBRL (euros), tal como están
+    etiquetados: value_reported es el valor exacto (sección 5 del plan)."""
     try:
         report = ixbrl.read_report(path)
         facts = {(key, column): report.find(concept, spec.entity, period, spec.dimensions)
@@ -528,7 +586,7 @@ def read_ixbrl_document(name: str, spec: IxbrlDocumentSpec, path: Path) -> Docum
             computed = sum(weight * facts[(key, column)].value for key, weight in calc.parts)
             cells = tuple(("ixbrl", key, column) for key in (calc.total, *dict(calc.parts)))
             checks.append(Check(name, total.page, relation, column, _exact(total.value),
-                                _exact(computed), cells))
+                                _exact(computed), cells, len(calc.parts)))
 
     figures = []
     for figure_spec in spec.figures:
@@ -536,12 +594,9 @@ def read_ixbrl_document(name: str, spec: IxbrlDocumentSpec, path: Path) -> Docum
         for part in figure_spec.resolved():
             column = part.column or figure_spec.column
             fact = facts[(part.row, column)]
-            value = _exact(fact.value / spec.unit_divisor)
-            places = Decimal(1).scaleb(-(len(str(spec.unit_divisor)) - 1))  # 0.001 en miles
-            if isinstance(value, Decimal) and value.quantize(places) == value:
-                value = value.quantize(places)  # mismos decimales en todas, sin redondear
-            scale_note = (f"{fact.unit} con scale {fact.scale} y decimals {fact.decimals}; "
-                          f"÷{spec.unit_divisor:,} a la unidad del club, sin redondear")
+            value = _exact(fact.value)
+            scale_note = (f"{fact.unit} con scale {fact.scale} y decimals {fact.decimals}: "
+                          "valor exacto, en unidades")
             period = fact.context.period.replace("/", "–")
             components.append(Component(
                 fact.page, fact.label, column, part.sign, Amount(value, fact.raw, (scale_note,)),
@@ -567,13 +622,15 @@ def read_document(name: str, spec: DocumentSpec, pdf_path: Path, sha256: str,
         page = table_spec.page
         observations, image_path = _page(spec.method, pdf_path, sha256, page, interim,
                                          table_spec.region, reocr)
-        if not re.search(spec.unit_evidence, " ".join(o.text for o in observations), re.I):
+        if table_spec.unit_from is None and not re.search(
+                spec.unit_evidence, " ".join(o.text for o in observations), re.I):
             raise ExtractionError(f"pág. {page}: no aparece {spec.unit_evidence!r}, así que no "
                                   "se puede confirmar la unidad")
         with Image.open(image_path) as image:
             region = in_region(observations, table_spec.region, image.width, image.height)
             try:
-                candidates = read_tables(group_rows(region), table_spec.header, spec.thousands)
+                candidates = read_tables(group_rows(region), table_spec.header, spec.thousands,
+                                         table_spec.join_header_lines)
             except TableError as exc:
                 raise ExtractionError(f"pág. {page}: {exc}") from exc
             candidates = [t for t in candidates if len(t.column_x2) == len(table_spec.columns)]
@@ -589,7 +646,10 @@ def read_document(name: str, spec: DocumentSpec, pdf_path: Path, sha256: str,
                     f"{len(table_spec.columns)} columnas y hay {len(candidates)}"
                 )
             table = candidates[0]
-            rows = find_rows(table, table_spec.rows, page)
+            rows = find_rows(table, {key: pattern for key, pattern in table_spec.rows.items()
+                                     if key not in table_spec.after}, page)
+            for key, anchor in table_spec.after.items():
+                rows[key] = row_after(table, anchor, table_spec.rows[key], key, page)
             if table_spec.rows_by_order:
                 rows |= rows_by_order(table, table_spec.rows_by_order, table_spec.anchors, page)
             for key, previous in table_spec.totals_after.items():
@@ -608,6 +668,14 @@ def read_document(name: str, spec: DocumentSpec, pdf_path: Path, sha256: str,
         loaded[table_spec.name] = LoadedTable(table_spec, table, rows, image_path)
 
     checks = _checks(name, loaded, spec.links)
+    for table_spec in spec.tables:
+        if table_spec.unit_from and not any(
+                check.ok and {cell[0] for cell in check.cells} >= {table_spec.name,
+                                                                   table_spec.unit_from}
+                for check in checks):
+            raise ExtractionError(
+                f"pág. {table_spec.page}: no dice la unidad y ningún cuadre la une con la tabla "
+                f"{table_spec.unit_from}, que sí la dice")
     figures = []
     figure_cells = set()
     for figure_spec in spec.figures:

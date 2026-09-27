@@ -111,19 +111,21 @@ def _spec(deferred_weight: int = 1) -> IxbrlDocumentSpec:
     )
 
 
-def test_documento_ixbrl_cifras_en_miles_sin_redondear_y_cuadres_en_euros(package, tmp_path):
+def test_documento_ixbrl_cifras_exactas_en_unidades_y_cuadres_ponderados(package, tmp_path):
     result = read_document("principal", _spec(), package, "sha", tmp_path)
     assert [check.ok for check in result.checks] == [True, True]
     assert (result.checks[0].reported, result.checks[0].computed) == (744567, 744567)
+    assert result.checks[0].rows == 4
     figures = {figure.concept: figure for figure in result.figures}
-    assert figures["revenue_total_reported"].value == Decimal("1234.567")
-    assert figures["revenue_ex_player_trading"].value == Decimal("1000.000")
+    assert figures["revenue_total_reported"].value == 1234567
+    assert figures["revenue_ex_player_trading"].value == 1000000
     assert figures["revenue_ex_player_trading"].is_derived
-    assert figures["net_result"].value == Decimal("744.567")
+    assert figures["net_result"].value == 744567
     revenue = figures["revenue_total_reported"]
     assert (revenue.page, revenue.label, revenue.method) == (2, "Totale ricavi", "ixbrl")
     assert "ifrs-full:Revenue [contexto c_act, 2030-07-01–2031-06-30" in revenue.sources
-    assert revenue.ocr_note.startswith("iXBRL, sin OCR: iso4217:EUR con scale 0 y decimals 0")
+    assert revenue.ocr_note == ("iXBRL, sin OCR: iso4217:EUR con scale 0 y decimals 0: valor "
+                                "exacto, en unidades")
 
 
 def test_un_peso_distinto_del_linkbase_del_emisor_es_error(package, tmp_path):

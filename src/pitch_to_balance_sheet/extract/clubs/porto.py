@@ -13,6 +13,10 @@ miles, negativos entre paréntesis y la columna 30.06.2024 antes que la 30.06.20
   son totales sin rótulo.
 - pág. 154 (307), nota 27, Custos com pessoal, en positivo; su total tiene que coincidir con la
   línea de la cuenta, cambiada de signo.
+- pág. 158 (315), nota 33, información por segmentos: el total de proveitos operacionais
+  excluindo passes de jogadores con clientes externos, 149.540, es el de los ingresos (decisión
+  del usuario del 27/09/2026). La cabecera "Outros serviços" ocupa dos líneas y la página no
+  dice la unidad: la confirma el cuadre con las tres líneas de la cuenta, que sí la dice.
 
 Comunicado (control), en miles de euros, columnas 2023/2024 y 2024/2025 y, a la derecha,
 variación y porcentaje, que se dejan fuera de la región:
@@ -22,9 +26,11 @@ variación y porcentaje, que se dejan fuera de la región:
 
 from pitch_to_balance_sheet.extract.statements import (
     ClubSpec,
+    Cross,
     DocumentSpec,
     FigureSpec,
     Link,
+    LinkSum,
     Part,
     Sum,
     TableSpec,
@@ -53,8 +59,15 @@ PNL_ROWS = {
     "result_before_tax": r"^resultado antes de impostos$",
     "tax": r"^imposto sobre o rendimento$",
     "net_result": r"^resultado liquido consolidado do exercicio$",
+    "attributable_parent": r"^detentores de capital proprio da empresa-mae$",
+    "attributable_nci": r"^interesses que nao controlam$",
 }
 REVENUE_ROWS = ("sales", "services", "other_income")
+SEGMENT_COLUMNS = ("a", "b", "c", "other", "total")
+SEGMENT_ROWS = {
+    "external": r"^resultantes de operacoes com clientes externos$",
+    "other_segments": r"^resultantes de operacoes com outros segmentos$",
+}
 STAFF_ROWS = {
     "board": r"^remuneracoes dos orgaos sociais$",
     "players_and_coaches": r"^remuneracoes dos atletas/tecnicos$",
@@ -66,10 +79,10 @@ STAFF_ROWS = {
     "other": r"^outros gastos com pessoal$",
 }
 REVENUE_NOTE = (
-    "Suma de Vendas, Prestações de serviços y Outros proveitos: la cuenta de resultados no "
-    "publica un total de ingresos. El club publica 149.540 en la nota 33 (pág. 158, proveitos "
-    "operacionais excluindo proveitos com passes, clientes externos) y en el comunicado; la "
-    "suma de las filas redondeadas da 1 más."
+    "Total de proveitos operacionais excluindo proveitos com passes de jogadores con clientes "
+    "externos, nota 33 (pág. 158); el comunicado da el mismo. La cuenta de resultados no tiene "
+    "total: sus tres líneas (Vendas, Prestações de serviços y Outros proveitos) suman 149.541, "
+    "un cuadre que pasa por redondeo."
 )
 REVENUE_EX_NOTE = (
     REVENUE_NOTE + " Los traspasos y las cesiones van aparte, en Proveitos com transações de "
@@ -84,7 +97,11 @@ SEVERANCE_NOTE = (
 )
 NET_NOTE = (
     "Resultado líquido consolidado do exercício, con los interesses que não controlam (1.748); "
-    "atribuible a la matriz, 39.240."
+    "atribuible a la matriz, 39.240 (net_result_attributable_parent)."
+)
+ATTRIBUTABLE_NOTE = (
+    "Detentores de capital próprio da Empresa-Mãe (pág. 117): el resultado sin los interesses "
+    "que não controlam. Informativa."
 )
 
 # Comunicado de resultados (control).
@@ -157,7 +174,14 @@ SPEC = ClubSpec(
                                              "investments")),
                     Sum("result_before_tax", ("operating_result", "financial_result")),
                     Sum("net_result", ("result_before_tax", "tax")),
+                    Sum("net_result", ("attributable_parent", "attributable_nci")),
                 ),
+            ),
+            TableSpec(
+                "segments", 158, SEGMENT_COLUMNS, SEGMENT_ROWS,
+                region=(0.5, 0.37, 1.0, 0.47),  # solo el bloque de 30.06.2025
+                header=r"^(A|B|C|servi\S+|Total)$", join_header_lines=True, unit_from="pnl",
+                cross=(Cross("total", SEGMENT_COLUMNS[:-1], tuple(SEGMENT_ROWS)),),
             ),
             TableSpec(
                 "staff", 154, YEARS, STAFF_ROWS, region=RIGHT_HALF, header=r"^30\.06\.202[45]$",
@@ -166,18 +190,23 @@ SPEC = ClubSpec(
                 sums=(Sum("staff_costs_total", tuple(STAFF_ROWS)),),
             ),
         ),
-        links=tuple(Link(("staff", "staff_costs_total", year), ("pnl", "staff", year), sign=-1)
-                    for year in YEARS),
+        links=(
+            *(Link(("staff", "staff_costs_total", year), ("pnl", "staff", year), sign=-1)
+              for year in YEARS),
+            LinkSum(("segments", "external", "total"),
+                    tuple(("pnl", row, "2025") for row in REVENUE_ROWS)),
+        ),
         figures=(
-            FigureSpec("revenue_total_reported", tuple(("pnl", row) for row in REVENUE_ROWS),
+            FigureSpec("revenue_total_reported", (Part("segments", "external", "total"),),
                        "2025", note=REVENUE_NOTE),
-            FigureSpec("revenue_ex_player_trading",
-                       tuple(("pnl", row) for row in REVENUE_ROWS), "2025",
-                       note=REVENUE_EX_NOTE),
+            FigureSpec("revenue_ex_player_trading", (Part("segments", "external", "total"),),
+                       "2025", note=REVENUE_EX_NOTE),
             FigureSpec("staff_costs", (("staff", "staff_costs_total"),), "2025"),
             FigureSpec("staff_severance_disclosed", (("staff", "severance"),), "2025",
                        note=SEVERANCE_NOTE, included_in_staff_costs="true"),
             FigureSpec("net_result", (("pnl", "net_result"),), "2025", note=NET_NOTE),
+            FigureSpec("net_result_attributable_parent", (("pnl", "attributable_parent"),),
+                       "2025", note=ATTRIBUTABLE_NOTE),
         ),
     ),
     controls=(DocumentSpec(
@@ -224,6 +253,8 @@ SPEC = ClubSpec(
             FigureSpec("net_result", (Part("results", "net_result_parent"),
                                       Part("results", "minorities", sign=-1)), "2025",
                        note=RELEASE_NET_NOTE),
+            FigureSpec("net_result_attributable_parent", (("results", "net_result_parent"),),
+                       "2025"),
         ),
         without={"staff_severance_disclosed": "el comunicado no desglosa los gastos de "
                                               "personal"},

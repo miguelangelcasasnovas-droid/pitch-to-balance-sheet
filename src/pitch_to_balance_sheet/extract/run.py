@@ -7,7 +7,7 @@ coincide) queda en error con el motivo, y se sigue con el siguiente.
 import csv
 import html
 from dataclasses import dataclass, field
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 
 from PIL import Image
 
@@ -32,7 +32,8 @@ from pitch_to_balance_sheet.sources.local import document_file
 
 SOURCE_NAMES = {"companies_house": "Companies House", "manual": "PDF manual", "url": "web del club"}
 CONCEPTS = ("revenue_total_reported", "revenue_ex_player_trading", "staff_costs",
-            "staff_costs_exceptional", "staff_severance_disclosed", "net_result")
+            "staff_costs_exceptional", "staff_severance_disclosed", "net_result",
+            "net_result_attributable_parent")
 # Marca de la tabla: si la indemnización está dentro de los gastos de personal.
 INCLUDED_MARKS = {"true": " (dentro)", "false": " (fuera)", "dudoso": " (¿dentro?)"}
 RESTATEMENT_THRESHOLD_PCT = 1.0  # sección 5 del plan
@@ -84,6 +85,10 @@ class ClubResult:
     @property
     def failed(self) -> list[Check]:
         return [check for check in self.checks if not check.ok]
+
+    @property
+    def rounded(self) -> list[Check]:
+        return [check for check in self.checks if check.rounding]
 
 
 def excerpt_figure(figure: Figure, path) -> None:
@@ -250,7 +255,8 @@ def write_outputs(season: str, results: list[ClubResult]) -> list[str]:
                            "page": check.page, "relation": check.relation,
                            "column": check.column, "reported": check.reported,
                            "computed": check.computed, "difference": check.difference,
-                           "ok": check.ok})
+                           "rows": check.rows, "tolerance": check.tolerance, "ok": check.ok,
+                           "note": check.note})
     restatements = [
         {"club_id": result.club_id, "document": r.document, "concept": r.concept,
          "page": r.page, "primary": r.primary, "control": r.control,
@@ -283,36 +289,47 @@ def summary_note(result: ClubResult) -> str:
     return "; ".join(f"{count} {name}" for name, count in result.summary.items())
 
 
-def _value(figure: Figure | None) -> str:
+def _value(figure: Figure | None, unit: str) -> str:
+    """La cifra para la tabla, en miles: las que están en unidades se redondean aquí, solo para
+    mostrarlas (el CSV guarda el valor exacto)."""
     if figure is None:
         return "—"
-    text = f"{figure.value:,}" if figure.value >= 0 else f"({-figure.value:,})"
+    value = figure.value
+    if unit == "units":
+        value = int((Decimal(value) / 1000).quantize(Decimal(1), rounding=ROUND_HALF_UP))
+    text = f"{value:,}" if value >= 0 else f"({-value:,})"
     return (text + (" *" if figure.is_derived else "")
             + INCLUDED_MARKS.get(figure.included_in_staff_costs, ""))
 
 
 def table(results: list[ClubResult]) -> str:
-    """Tabla final. Un * marca las cifras derivadas (is_derived); en las indemnizaciones, entre
-    paréntesis, si están dentro de los gastos de personal."""
+    """Tabla final, en miles. Un * marca las cifras derivadas (is_derived); en las
+    indemnizaciones, entre paréntesis, si están dentro de los gastos de personal."""
     names = {club.club_id: club.name for club in load_clubs()}
     lines = ["| Club | Fuente | Ingresos publicados | Ingresos sin traspasos | "
              "Gastos de personal | Personal excepcional | Indemnizaciones informadas | "
-             "Resultado neto | Moneda | Unidad | Páginas | Cuadres | Controles | Notas de OCR |",
-             "|" + " --- |" * 14]
+             "Resultado neto | Resultado atribuible a la matriz | Moneda | Unidad | Páginas | "
+             "Cuadres | Controles | Notas de OCR |",
+             "|" + " --- |" * 15]
     for result in results:
         by_concept = {figure.concept: figure for figure in result.figures}
         ok = not result.error
-        values = [_value(by_concept.get(c)) if ok else "—" for c in CONCEPTS]
+        values = [_value(by_concept.get(c), result.spec.unit) if ok else "—"
+                  for c in CONCEPTS]
+        unit = (result.spec.unit if result.spec.unit == "thousands"
+                else f"{result.spec.unit} (aquí en miles redondeados)")
         pages = " · ".join(
             "+".join(dict.fromkeys(str(comp.page) for comp in by_concept[c].components))
             for c in CONCEPTS if c in by_concept
         ) or "—"
         passed = sum(check.ok for check in result.checks)
-        checks = (f"OK ({passed}/{len(result.checks)})" if ok
-                  else f"FALLA ({passed}/{len(result.checks)})" if result.checks else "ERROR")
+        rounded = f", {len(result.rounded)} por redondeo" if result.rounded else ""
+        checks = (f"OK ({passed}/{len(result.checks)}{rounded})" if ok
+                  else f"FALLA ({passed}/{len(result.checks)}{rounded})" if result.checks
+                  else "ERROR")
         lines.append(f"| {names.get(result.club_id, result.club_id)} | {result.source or '—'} | "
                      + " | ".join(values)
-                     + f" | {result.spec.currency} | {result.spec.unit} | {pages} | {checks} | "
+                     + f" | {result.spec.currency} | {unit} | {pages} | {checks} | "
                      f"{'; '.join(result.controls) or '—'} | "
                      f"{summary_note(result) if ok else 'error: ' + result.error} |")
     return "\n".join(lines)

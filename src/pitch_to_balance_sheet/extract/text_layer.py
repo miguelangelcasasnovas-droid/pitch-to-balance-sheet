@@ -23,7 +23,7 @@ MIN_CHARS_TEXT_PAGE = 200
 KEYWORDS = {
     "ingresos": ("turnover", "revenue", "umsatzerlöse", "ricavi", "omzet", "rendimentos"),
     "personal": ("staff costs", "wages", "personalaufwand", "personale", "personeelskosten",
-                 "gastos com pessoal"),
+                 "gastos com pessoal", "custos com pessoal"),
 }
 
 

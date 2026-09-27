@@ -13,6 +13,9 @@ pdfplumber, y la misma paginación en las dos versiones:
   alemán, los miles se separan con punto.
 - pág. 161, nota 20, Personalaufwand / Personnel expenses, en positivo; su total tiene que
   coincidir con la línea de la cuenta de resultados, cambiada de signo.
+El resultado atribuible a la matriz ("- Eigenkapitalgebern der Muttergesellschaft:") aparece dos
+veces en la pág. 126, para el resultado neto y para el global: se toma la fila que va justo
+después de "vom Konzernjahresüberschuss zuzurechnen:".
 """
 
 from pitch_to_balance_sheet.extract.statements import (
@@ -26,6 +29,10 @@ from pitch_to_balance_sheet.extract.statements import (
 
 YEARS = ("2025", "2024")
 HEADER = r"^\d{4}/\d{4}$"
+ATTRIBUTABLE_NOTE = (
+    "vom Konzernjahresüberschuss zuzurechnen: Eigenkapitalgebern der Muttergesellschaft (pág. "
+    "126): todo el resultado; no hay minoritarios. Informativa."
+)
 REVENUE_EX_NOTE = (
     "La nota 16 (pág. 160) desglosa los ingresos en Spielbetrieb, Werbung, TV-Vermarktung, "
     "Merchandising y Conference, Catering, Sonstige; los traspasos van aparte, en Ergebnis aus "
@@ -59,7 +66,11 @@ def document(language: str, control_index: int | None) -> DocumentSpec:
         "income_taxes": r"^ertragsteuern" if german else r"^income taxes",
         "net_result": (r"^konzernjahresuberschuss$" if german
                        else r"^consolidated net profit for the year$"),
+        "attributable_parent": (r"eigenkapitalgebern der muttergesellschaft$" if german
+                                else r"owners of the parent$"),
     }
+    attributable_anchor = (r"^vom konzernjahresuberschuss zuzurechnen$" if german
+                           else r"^consolidated net profit for the year attributable to$")
     staff_rows = {
         "wages_and_salaries": r"^lohne und gehalter$" if german else r"^wages and salaries$",
         "social_security": (r"^sozialversicherungsabgaben$" if german
@@ -73,6 +84,7 @@ def document(language: str, control_index: int | None) -> DocumentSpec:
         tables=(
             TableSpec(
                 "pnl", 126, YEARS, pnl_rows, header=HEADER,
+                after={"attributable_parent": attributable_anchor},
                 sums=(
                     Sum("operating_result", ("revenue", "net_transfer_income",
                                              "other_operating_income", "cost_of_materials",
@@ -81,6 +93,7 @@ def document(language: str, control_index: int | None) -> DocumentSpec:
                     Sum("financial_result", ("associates", "finance_income", "finance_costs")),
                     Sum("result_before_tax", ("operating_result", "financial_result")),
                     Sum("net_result", ("result_before_tax", "income_taxes")),
+                    Sum("net_result", ("attributable_parent",)),
                 ),
             ),
             TableSpec(
@@ -98,6 +111,8 @@ def document(language: str, control_index: int | None) -> DocumentSpec:
                        note=REVENUE_EX_NOTE),
             FigureSpec("staff_costs", (("staff", "staff_costs_total"),), "2025"),
             FigureSpec("net_result", (("pnl", "net_result"),), "2025"),
+            FigureSpec("net_result_attributable_parent", (("pnl", "attributable_parent"),),
+                       "2025", note=ATTRIBUTABLE_NOTE),
         ),
     )
 

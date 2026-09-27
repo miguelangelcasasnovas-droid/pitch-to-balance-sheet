@@ -259,13 +259,20 @@ def extract(season: str, club_id: str | None, reocr: bool = False) -> int:
                 print(f"    nota: {figure.note}")
         passed = sum(check.ok for check in result.checks)
         if result.checks or not result.error:
-            print(f"  cuadres: {passed} de {len(result.checks)} OK")
+            rounded = f", {len(result.rounded)} por redondeo" if result.rounded else ""
+            print(f"  cuadres: {passed} de {len(result.checks)} OK{rounded}")
+            for check in result.rounded:
+                print(f"  redondeo {check.document} pág. {check.page} [{check.column}] "
+                      f"{check.relation}: {check.reported:,} frente a {check.computed:,} "
+                      f"(diferencia {check.difference:,}, {check.rows} filas, tolerancia "
+                      f"{check.tolerance})")
         else:
             print("  cuadres: no se han hecho (el club está en error)")
         for check in result.failed:
             print(f"  FALLA {check.document} pág. {check.page} [{check.column}] {check.relation}: "
                   f"{check.reported:,} frente a {check.computed:,} "
-                  f"(diferencia {check.difference:,})")
+                  f"(diferencia {check.difference:,}, {check.rows} filas, tolerancia "
+                  f"{check.tolerance})")
         for restatement in result.restatements:
             print(f"  {'REEXPRESIÓN' if restatement.restated else 'reexpresión no'} "
                   f"{restatement.document} {restatement.concept}: {restatement.primary:,} frente "

@@ -64,3 +64,13 @@ def test_la_cifra_completa_es_entera(value, multiplier, full):
     assert run._full(Decimal("146041.028"), 1000) == 146041028
     with pytest.raises(ValueError, match="no es un entero"):
         run._full(Decimal("0.0005"), 1000)
+
+
+def test_las_cifras_en_unidades_se_muestran_en_miles_redondeados():
+    from decimal import Decimal
+
+    assert run._value(_figure("revenue_total_reported", 146041028), "units") == "146,041"
+    assert run._value(_figure("net_result", -17164480), "units") == "(17,164)"
+    assert run._value(_figure("x", 1500), "units") == "2"  # la mitad, hacia arriba
+    assert run._value(_figure("x", 690998), "thousands") == "690,998"
+    assert Decimal(146041028) / 1000 == Decimal("146041.028")  # el CSV guarda el exacto

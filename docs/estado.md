@@ -1,6 +1,6 @@
 # Estado del proyecto
 
-Actualizado: 27/09/2026 (fase 2g)
+Actualizado: 27/09/2026 (fase 2h)
 
 ## Fase 0: cerrada
 
@@ -359,9 +359,9 @@ Hecho en Cowork, sin tocar `config/`, `src/` ni `data/` y sin extraer cifras. El
 - **Porto también publica la versión ESEF** en la CMVM, que según la propia CMVM es la oficial y prevalece si difiere del PDF. Tampoco tiene URL: se baja con el botón "Download ZIP".
 - **Pendiente de medir con pdfplumber:** el PDF de Porto, cuando esté en `data/raw/manual/`.
 
-## Fase 2g: Lazio (ESEF) y FC Porto, 2024/25 (hecha, a falta del OK)
+## Fase 2g: Lazio (ESEF) y FC Porto, 2024/25 (cerrada)
 
-Hecha el 27/09/2026. Antes de empezar se subieron tal cual, en un commit aparte (`28d2e1d`), los cambios de Cowork en `estado.md` y `fuentes-pendientes.md`. No se ha convertido nada a EUR ni se ha empezado la fase 3a.
+Hecha y cerrada el 27/09/2026 con el OK del usuario, que comprobó el CI de `f6e511f`. Las decisiones 48 a 51 y la regla de tolerancia cambiaron lo que sigue: la tabla vigente es la de la fase 2h. Antes de empezar se subieron tal cual, en un commit aparte (`28d2e1d`), los cambios de Cowork en `estado.md` y `fuentes-pendientes.md`. No se ha convertido nada a EUR ni se ha empezado la fase 3a.
 
 **Resultado** (`python -m pitch_to_balance_sheet extract`, exit 1 por Porto), en miles de la moneda de cada club. Las 12 filas anteriores no cambian (tabla de la fase 2f):
 
@@ -402,6 +402,49 @@ Cuadres guardados: 353, y el único que falla es el de la nota 27 de Porto. Los 
    - El error de un guion sin respaldo nombra el cuadre que falla.
    - `text-layer` se salta los paquetes ESEF y lo dice.
 4. **Tests:** 116, en verde. El lector de iXBRL se prueba con un paquete sintético sin datos reales (`tests/fixtures/esef_sintetico/`).
+
+## Fase 2h: tolerancia de redondeo, Porto completo y resultado atribuible (hecha, a falta del OK)
+
+Hecha el 27/09/2026. No se ha convertido nada a EUR ni se ha empezado la fase 3a.
+
+**Resultado** (`python -m pitch_to_balance_sheet extract`, exit 0), en miles. Lazio va en euros en el CSV y aquí, en miles redondeados. Un * marca las cifras derivadas:
+
+| Club | Ingresos publicados | Ingresos sin traspasos | Personal | Personal excepcional | Indemnizaciones informadas | Resultado neto | Atribuible a la matriz | Moneda | Cuadres | Controles |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Arsenal | 690,998 | 690,544 * | 346,804 | — | — | (1,377) | — | GBP | OK, 40/40 | — |
+| Chelsea | 490,857 | 490,857 | 359,265 | — | — | (262,647) | — | GBP | OK, 35/35 | — |
+| Liverpool | 702,722 | 702,722 | 427,727 | — | — | 8,273 | — | GBP | OK, 28/28 | Companies House: idénticas |
+| Manchester City | 694,094 | 694,094 | 408,403 | — | — | (9,916) | — | GBP | OK, 29/29 | — |
+| Tottenham Hotspur | 564,881 | 564,881 | 255,811 | — | 153 (fuera) | (94,666) | — | GBP | OK, 30/30 | — |
+| Newcastle United | 335,322 | 335,322 | 243,477 | — | — | 34,728 | — | GBP | OK, 12/12 | — |
+| Manchester United | 666,514 | 666,514 | 347,835 | 34,579 (dentro) | — | (33,023) | — | GBP | OK, 36/36 | 20-F 2026: sin reexpresión |
+| Juventus | 529,630 | 419,905 * | 244,666 * | — | 8,972 (dentro) | (58,146) | — | EUR | OK, 41/41 | Inglés: idénticas |
+| Borussia Dortmund | 526,019 | 526,019 | 268,296 | — | — | 6,497 | 6,497 | EUR | OK, 33/33 | Inglés: idénticas |
+| Celtic | 143,597 | 143,597 | 74,763 | 1 (¿dentro?) | — | 33,934 | — | GBP | OK, 14/14 | — |
+| Ajax | 178,129 | 178,129 | 109,110 | — | — | (37,339) | (37,339) | EUR | OK, 14/14 | — |
+| Benfica | 230,618 | 230,618 | 127,713 | — | 13,957 (dentro) | 34,444 | — | EUR | OK, 18/18 | — |
+| Lazio | 146,041 | 143,141 * | 98,189 | — | — | (17,164) | — | EUR | OK, 12/12 | — |
+| FC Porto | 149,540 | 149,540 | 81,939 | — | 3,005 (dentro) | 40,988 | 39,240 | EUR | OK, 40/40 (13 por redondeo) | Comunicado: idénticas; indemnizaciones sin control |
+
+382 cuadres y todos pasan. 13 lo hacen por redondeo, todos de Porto. Ningún otro club tiene diferencias distintas de 0, así que **la regla nueva no cambia el resultado de ningún cuadre de otro club**.
+
+1. **Tolerancia de redondeo** (sección 5 del plan):
+   - Tolerancia = max(1, floor(0,5 × filas sumadas)).
+   - Cada cuadre guarda en `cuadres_2024_25.csv` sus filas (`rows`), su tolerancia y la marca `redondeo (N filas)` si pasa con diferencia.
+   - Las tablas dicen cuántos pasan por redondeo.
+2. **Porto:**
+   - **Ingresos:** 149,540, el total de la nota 33 (pág. 158), igual que el comunicado. La suma de las tres líneas de la cuenta (149,541) queda como cuadre, que pasa por redondeo (3 filas, diferencia 1).
+   - **Nota 33:** su cabecera "Outros serviços" ocupa dos líneas y la página no dice la unidad. La unidad se confirma con ese cuadre contra la cuenta de la pág. 117; si no pasara, sería un error.
+   - **Personal:** la nota 27 pasa con 2 de diferencia (8 filas, tolerancia 4). El comunicado 2023/24 pasa igual (9 filas).
+   - **Control:** ingresos, personal, resultado neto y atribuible, idénticos. Las indemnizaciones quedan sin control, anotado.
+3. **Lazio:** `value_reported` en euros exactos (`unit_reported` = units, multiplicador 1); `value_full` es el mismo valor. Las tablas lo muestran en miles redondeados (la mitad, hacia arriba).
+4. **`net_result_attributable_parent`** (informativo, sección 9 del plan). Lo publican:
+   - **Dortmund:** 6,497, pág. 126. La línea se repite para el resultado global, así que se toma la que va justo después de «vom Konzernjahresüberschuss zuzurechnen:». Idéntico en el inglés.
+   - **Ajax:** (37,339), pág. 81.
+   - **Porto:** 39,240, pág. 117; atribuible más minoritarios cuadra con el neto. Idéntico en el comunicado.
+   - **Ninguno de los demás lo publica.** La línea de Liverpool es del resultado global total, no del neto. Lazio no etiqueta ningún atribuible.
+5. **`text-layer`:** «custos com pessoal» entre las palabras clave en portugués. El comunicado de Porto, que antes no encontraba ninguna, la encuentra en las págs. 2 y 5.
+6. **Tests:** 127, en verde.
 
 ## Decisiones
 
@@ -490,25 +533,37 @@ Tomadas por el usuario el 27/09/2026 (fase 2g):
 46. **Lazio:** el ESEF de 1info, cuentas consolidadas, leído por sus etiquetas iXBRL.
 47. **Porto:** las cuentas consolidadas del PDF manual; el ESEF queda fuera. Control: el comunicado de resultados, con cifras idénticas en lo que traiga y lo demás sin control, anotado.
 
-Tomadas en la fase 2g, a falta del OK del usuario:
+Tomadas en la fase 2g; el usuario aceptó la 48 (con value_reported en unidades), la 49 y la 51, y cambió la 50 el 27/09/2026 (fase 2h):
 
 48. **Lazio en miles con decimales exactos** (146,041.028): el iXBRL da euros y no se redondea. Los cuadres se hacen en euros.
 49. **Cifras iXBRL sin recorte PNG:** el recorte es un `.html` con la fila original del XHTML y el hecho etiquetado.
 50. **Ingresos de Porto:** la suma de las tres líneas de la cuenta (149,541, derivada). La alternativa es el total publicado en la nota 33 (pág. 158) y en el comunicado, 149.540.
 51. **Resultado neto de Porto:** el consolidado total con minoritarios (40,988), como en el resto de clubes; atribuible a la matriz, 39.240.
 
+Tomadas por el usuario el 27/09/2026 (fase 2h):
+
+52. **Ingresos de Porto:** 149,540, el total de la nota 33 y del comunicado. La suma de las tres líneas queda como cuadre.
+53. **`net_result_attributable_parent`** como concepto informativo, en los clubes que lo publiquen.
+54. **Tolerancia de los cuadres,** para todos los clubes: max(1, floor(0,5 × filas sumadas)), con la marca "redondeo" y el número de filas (sección 5 del plan).
+55. **Lazio:** `value_reported` en euros exactos; las tablas, en miles redondeados.
+
+Tomadas en la fase 2h, a falta del OK del usuario:
+
+56. **Cabeceras en dos líneas y unidad confirmada por un cuadre**, solo cuando se piden en la especificación. Solo se usan en la nota 33 de Porto.
+57. **Fila después de su ancla** para rótulos que se repiten en la página. Solo se usa en el atribuible de Dortmund.
+58. **Qué cuenta como atribuible publicado:** la línea del resultado neto atribuible a la matriz, no la del resultado global. Por eso Liverpool no lo tiene.
+
 ## Pendientes
 
 | Pendiente | Para cuándo | Detalle |
 | --- | --- | --- |
 | PDF manual de Arsenal | Opcional | Si el usuario lo deja en `data/raw/manual/arsenal_2024-25.pdf`, pasa a ser la fuente principal. Hay que añadirlo a `sources.yaml` con su URL y registrarlo |
-| OK a la fase 2g | Antes de seguir | La tabla de 14 clubes y las decisiones 48 a 51 |
-| Porto en error | Antes de las métricas | Dos cuadres del documento difieren en 2 por redondeo (ver fase 2g). Opciones: tolerancia 2 en sumas de muchas filas redondeadas, otra regla, o dejar Porto sin cifras |
+| OK a la fase 2h | Antes de seguir | La tabla de 14 clubes y las decisiones 56 a 58 |
 | Hooks y OCR fuera del Mac | Si se trabaja desde la VM Linux | El hook apunta al `.venv` del Mac y el binario de gitleaks es de macOS arm64: desde la VM, `git commit` fallaría. El OCR tampoco funciona fuera de macOS |
 
 El resto de comprobaciones de la fase 2 está en la sección 7.1 y en los riesgos de `plan.md`.
 
 ## Siguiente paso
 
-1. El usuario revisa la fase 2g, las decisiones 48 a 51 y qué hacer con los redondeos de Porto.
+1. El usuario revisa la fase 2h y las decisiones 56 a 58.
 2. Con los 14 clubes: conversión a EUR con los tipos del BCE (sección 5 del plan) y tabla consolidada.

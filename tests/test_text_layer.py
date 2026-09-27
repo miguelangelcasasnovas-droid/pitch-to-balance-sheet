@@ -69,6 +69,7 @@ def test_palabras_clave_en_cinco_idiomas_sin_distinguir_acentos(monkeypatch):
         "Netto-omzet 178.129\nPersoneelskosten",
         "Rendimentos operacionais 230.618\nGastos com\npessoal",
         "Group turnover\nStaff costs",
+        "Custos com Pessoal 81.939",
     ]
     monkeypatch.setattr(text_layer, "_page_texts_pdfplumber", lambda path: pages)
     layer = measure(Path("no-se-abre.pdf"))
@@ -79,6 +80,7 @@ def test_palabras_clave_en_cinco_idiomas_sin_distinguir_acentos(monkeypatch):
         "omzet": (3,), "personeelskosten": (3,),
         "rendimentos": (4,), "gastos com pessoal": (4,),
         "turnover": (5,), "staff costs": (5,),
+        "custos com pessoal": (6,),
     }
     assert text_layer.column_name("umsatzerlöse") == "umsatzerlose"
     assert text_layer.column_name("gastos com pessoal") == "gastos_com_pessoal"

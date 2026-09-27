@@ -193,13 +193,29 @@ def in_region(observations: list[Observation], region, width: float, height: flo
             if x1 <= (o.box[0] + o.box[2]) / 2 <= x2 and y1 <= o.center_y <= y2]
 
 
-def read_tables(rows: list[Row], header: str = UNIT_HEADER, thousands: str = ",") -> list[Table]:
-    """Tablas de la página: cada una empieza en una fila con cabeceras de columna."""
+def read_tables(rows: list[Row], header: str = UNIT_HEADER, thousands: str = ",",
+                join_header_lines: bool = False) -> list[Table]:
+    """Tablas de la página: cada una empieza en una fila con cabeceras de columna.
+
+    Con join_header_lines, una fila que solo tiene cabeceras y va justo después de otra fila de
+    cabecera se une a ella: cabeceras en dos líneas, como "Segm. A ... Total" con "serviços"
+    debajo de "Outros".
+    """
     header_pattern = re.compile(header, re.IGNORECASE)
     tables: list[Table] = []
-    for row in rows:
+    skip = False
+    for index, row in enumerate(rows):
+        if skip:
+            skip = False
+            continue
         tokens = row.tokens()
         headers = [token for token in tokens if header_pattern.fullmatch(token.text)]
+        following = rows[index + 1].tokens() if index + 1 < len(rows) else []
+        if (headers and join_header_lines and following
+                and all(header_pattern.fullmatch(token.text) for token in following)):
+            tokens = sorted(tokens + following, key=lambda token: token.x2)
+            headers = [token for token in tokens if header_pattern.fullmatch(token.text)]
+            skip = True
         if headers:
             label = " ".join(t.text for t in tokens if not header_pattern.fullmatch(t.text))
             tables.append(Table(tuple(t.text for t in headers), tuple(t.x2 for t in headers), [],

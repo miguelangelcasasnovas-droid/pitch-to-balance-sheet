@@ -222,6 +222,11 @@ def test_las_especificaciones_de_los_clubes_se_cargan():
                                                     "celtic": "dudoso"}
     assert included("staff_severance_disclosed") == {"tottenham": "false", "benfica": "true",
                                                       "juventus": "true", "porto": "true"}
+    attributable = {club_id for club_id, club_spec in SPECS.items()
+                    if any(f.concept == "net_result_attributable_parent"
+                           for f in club_spec.primary.figures)}
+    assert attributable == {"borussia_dortmund", "ajax", "porto"}
+    assert (SPECS["lazio"].unit, SPECS["lazio"].multiplier) == ("units", 1)
     assert not any(d.pending for s in SPECS.values() for d in (s.primary, *s.controls))
     assert SPECS["borussia_dortmund"].primary.thousands == "."
     assert SPECS["borussia_dortmund"].controls[0].control_kind == "identical"
@@ -299,3 +304,60 @@ def test_reexpresion_si_la_cifra_del_ano_siguiente_difiere_mas_de_un_1_por_cient
     from pitch_to_balance_sheet.extract.run import Restatement
 
     assert Restatement("control", "x", 1, primary, control).restated is restated
+
+
+@pytest.mark.parametrize(("rows", "tolerance"),
+                         [(1, 1), (2, 1), (3, 1), (4, 2), (5, 2), (8, 4), (9, 4)])
+def test_la_tolerancia_crece_con_las_filas_sumadas(rows, tolerance):
+    from pitch_to_balance_sheet.extract.statements import Check
+
+    assert Check("d", 1, "r", "2025", 0, 0, rows=rows).tolerance == tolerance
+
+
+def test_un_cuadre_que_pasa_con_diferencia_lleva_la_marca_redondeo():
+    from pitch_to_balance_sheet.extract.statements import Check
+
+    rounded = Check("d", 154, "total = ocho filas", "2025", 81939, 81937, rows=8)
+    assert rounded.ok and rounded.rounding and rounded.note == "redondeo (8 filas)"
+    exact = Check("d", 1, "r", "2025", 10, 10, rows=3)
+    assert exact.ok and not exact.rounding and exact.note == ""
+    assert not Check("d", 1, "r", "2025", 12, 10, rows=3).ok  # 3 filas: tolerancia 1
+
+
+def _row(y, *words):
+    """Una fila de palabras (texto, x1, x2) a la altura y."""
+    return Row([Observation(text, 1.0, (x1, y, x2, y + 20)) for text, x1, x2 in words])
+
+
+def test_cabecera_en_dos_lineas_se_une_si_se_pide():
+    from pitch_to_balance_sheet.extract.tables import read_tables
+
+    rows = [_row(0, ("Segm.", 100, 150), ("A", 160, 170), ("Total", 400, 450)),
+            _row(30, ("servicos", 300, 350)),
+            _row(60, ("Clientes", 0, 80), ("88.231", 120, 170), ("2.132", 310, 350),
+                  ("149.540", 390, 450))]
+    joined = read_tables(rows, r"^(A|servi\S+|Total)$", ".", join_header_lines=True)
+    assert [t.header_raw for t in joined] == [("A", "servicos", "Total")]
+    assert {k: a.value for k, a in joined[0].rows[0].amounts.items()} == {
+        0: 88231, 1: 2132, 2: 149540}
+    apart = read_tables(rows, r"^(A|servi\S+|Total)$", ".")
+    assert [t.header_raw for t in apart] == [("A", "Total"), ("servicos",)]
+
+
+def test_fila_que_va_justo_despues_de_su_ancla():
+    from pitch_to_balance_sheet.extract.statements import row_after
+    from pitch_to_balance_sheet.extract.tables import read_tables
+
+    rows = [_row(0, ("2025", 400, 450)),
+            _row(30, ("Net", 0, 40), ("profit", 45, 90), ("10", 430, 450)),
+            _row(60, ("attributable", 0, 90), ("to:", 95, 110)),
+            _row(90, ("-", 0, 5), ("Owners", 10, 60), ("of", 65, 75), ("the", 80, 100),
+                  ("parent:", 105, 150), ("10", 430, 450)),
+            _row(120, ("Comprehensive", 0, 100), ("attributable", 105, 190), ("to:", 195, 210)),
+            _row(150, ("-", 0, 5), ("Owners", 10, 60), ("of", 65, 75), ("the", 80, 100),
+                  ("parent:", 105, 150), ("12", 430, 450))]
+    table = read_tables(rows, r"^2025$")[0]
+    row = row_after(table, r"^attributable to$", r"owners of the parent$", "parent", 1)
+    assert row.amounts[0].value == 10
+    with pytest.raises(ExtractionError, match="aparece 2 veces"):
+        row_after(table, r"attributable to$", r"owners of the parent$", "parent", 1)

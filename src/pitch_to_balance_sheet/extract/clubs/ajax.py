@@ -51,6 +51,10 @@ STAFF_ROWS = {
     "social_charges": r"^sociale lasten$",
     "pension_charges": r"^pensioenlasten$",
 }
+ATTRIBUTABLE_NOTE = (
+    "Toe te rekenen aan de aandeelhouders van de vennootschap (pág. 81): todo el resultado; no "
+    "hay minoritarios. Informativa."
+)
 REVENUE_EX_NOTE = (
     "La nota 25 (pág. 108) desglosa la netto-omzet en ingresos de partidos y competiciones, "
     "partnerships, televisie, merchandising y overige baten; los traspasos van aparte, en "
@@ -98,6 +102,8 @@ SPEC = ClubSpec(
                        note=REVENUE_EX_NOTE),
             FigureSpec("staff_costs", (("staff", "staff_costs_total"),), "2025"),
             FigureSpec("net_result", (("pnl", "net_result"),), "2025"),
+            FigureSpec("net_result_attributable_parent", (("pnl", "attributable"),), "2025",
+                       note=ATTRIBUTABLE_NOTE),
         ),
     ),
 )

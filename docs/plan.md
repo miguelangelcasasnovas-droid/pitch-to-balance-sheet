@@ -124,6 +124,11 @@ Convenciones:
 - **Temporada = año fiscal que cierra en ella.** Un cierre a 30/06/2025 o a 31/05/2025 es `2024/25`. Arsenal y Liverpool cierran el 31 de mayo; el resto de clubes comprobados, el 30 de junio.
 - **EUR con tipos de referencia del BCE** (serie `EXR.D.GBP.EUR.SP00.A` y equivalentes). Cuenta de resultados: media de los tipos diarios del año fiscal. Balance: tipo del día de cierre o el último anterior. Precios de mercado: tipo del mismo día. El BCE publica GBP por 1 EUR, así que se divide.
 - **Unidades:** todo pasa a unidades monetarias completas antes de convertir, porque los informes vienen en miles o en millones.
+- **`value_reported` es la cifra tal como la da el informe,** en su unidad: en miles si el informe va en miles, y en unidades si va en unidades, como el iXBRL de Lazio (146.041.028 euros). Se guarda exacta, sin redondear. Las tablas de revisión la muestran en miles redondeados.
+- **Tolerancia de los cuadres, decidida el 27/09/2026 para todos los clubes:**
+  - Tolerancia = max(1, floor(0,5 × número de filas sumadas)), en la unidad del documento, porque cada fila redondeada puede desviarse ±0,5. Por ejemplo, 1 con 2 o 3 filas y 4 con 8 o 9 filas.
+  - Una igualdad entre dos celdas (el total de una nota y su línea en la cuenta, o la fuente y su control) cuenta como una fila: tolerancia 1.
+  - Un cuadre que pasa con diferencia distinta de 0 lleva la marca "redondeo" y el número de filas. Las tablas dicen cuántos cuadres pasan por redondeo.
 - **Reexpresiones:** la cifra de cada año sale de su propio informe. La comparativa del año siguiente sirve de control y se marca si difiere más de un 1%.
 - **Validación con pandera:** tipos, lista cerrada de conceptos, clave única, fuente obligatoria cuando hay valor, motivo obligatorio cuando hay hueco y cuadre de las partidas de ingresos con el total, con tolerancia de redondeo.
 - **Almacenamiento:** parquet en `data/processed/` y un `football.duckdb` que lee el dashboard.
@@ -233,6 +238,8 @@ Cinco métricas por club y temporada, y una valoración por EV/ingresos que da u
   - `true` o `false`, según estén dentro o fuera de `staff_costs`;
   - `dudoso` si las cuentas no lo dicen.
 - Ninguna de las dos ajusta ninguna métrica.
+
+**Resultado neto, decidido el 27/09/2026:** `net_result` es el resultado consolidado total, con los minoritarios. `net_result_attributable_parent`, lo atribuible a la matriz, es informativo y se guarda en los clubes que lo publican.
 
 | Métrica | Definición | Si falta un dato |
 | --- | --- | --- |
