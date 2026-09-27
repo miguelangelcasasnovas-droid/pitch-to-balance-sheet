@@ -58,3 +58,27 @@ def test_si_pdfplumber_no_puede_abrirlo_se_abre_con_pypdfium2(monkeypatch):
 def test_pdf_sin_paginas_es_error():
     with pytest.raises(ValueError, match="no tiene páginas"):
         classify([])
+
+
+def test_palabras_clave_en_cinco_idiomas_sin_distinguir_acentos(monkeypatch):
+    from pitch_to_balance_sheet.extract import text_layer
+
+    pages = [
+        "KONZERNGESAMTERGEBNISRECHNUNG\nKonzernumsatzerlo\u0308se 526.019\nPersonalaufwand",
+        "Totale ricavi e proventi 529.630\nPersonale tesserato",
+        "Netto-omzet 178.129\nPersoneelskosten",
+        "Rendimentos operacionais 230.618\nGastos com\npessoal",
+        "Group turnover\nStaff costs",
+    ]
+    monkeypatch.setattr(text_layer, "_page_texts_pdfplumber", lambda path: pages)
+    layer = measure(Path("no-se-abre.pdf"))
+    assert {term: layer.keyword_pages[term] for term in layer.keyword_pages
+            if layer.keyword_pages[term]} == {
+        "umsatzerlöse": (1,), "personalaufwand": (1,),
+        "ricavi": (2,), "personale": (2,),
+        "omzet": (3,), "personeelskosten": (3,),
+        "rendimentos": (4,), "gastos com pessoal": (4,),
+        "turnover": (5,), "staff costs": (5,),
+    }
+    assert text_layer.column_name("umsatzerlöse") == "umsatzerlose"
+    assert text_layer.column_name("gastos com pessoal") == "gastos_com_pessoal"

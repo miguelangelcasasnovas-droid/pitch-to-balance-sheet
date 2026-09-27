@@ -32,7 +32,7 @@ from pitch_to_balance_sheet.config import (
 )
 from pitch_to_balance_sheet.extract import run
 from pitch_to_balance_sheet.extract.clubs import SPECS
-from pitch_to_balance_sheet.extract.text_layer import KEYWORDS, measure
+from pitch_to_balance_sheet.extract.text_layer import KEYWORDS, column_name, measure
 from pitch_to_balance_sheet.sources import web
 from pitch_to_balance_sheet.sources.companies_house import (
     AccountsDocument,
@@ -194,7 +194,7 @@ def text_layer(season: str) -> int:
                     "engine": layer.engine,
                     "page": number,
                     "chars": chars,
-                    **{term.replace(" ", "_"): number in layer.keyword_pages[term]
+                    **{column_name(term): number in layer.keyword_pages[term]
                        for terms in KEYWORDS.values() for term in terms},
                 })
             chars = layer.chars_per_page

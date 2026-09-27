@@ -7,8 +7,11 @@ El criterio se fijó en docs/estado.md antes de medir:
   y mixto entre medias.
 Añadido por decisión del usuario del 26/09/2026: si pdfplumber no puede abrir el PDF, se abre con
 pypdfium2 y los caracteres son los no blancos de su texto (get_text_range()).
+Añadido por decisión del usuario del 27/09/2026: las palabras clave también en alemán, italiano,
+neerlandés y portugués. Se buscan sin distinguir mayúsculas ni acentos.
 """
 
+import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -16,10 +19,24 @@ import pdfplumber
 import pypdfium2
 
 MIN_CHARS_TEXT_PAGE = 200
+# En inglés, alemán, italiano, neerlandés y portugués.
 KEYWORDS = {
-    "ingresos": ("turnover", "revenue"),
-    "personal": ("staff costs", "wages"),
+    "ingresos": ("turnover", "revenue", "umsatzerlöse", "ricavi", "omzet", "rendimentos"),
+    "personal": ("staff costs", "wages", "personalaufwand", "personale", "personeelskosten",
+                 "gastos com pessoal"),
 }
+
+
+def fold(text: str) -> str:
+    """Minúsculas, sin acentos y con un solo espacio entre palabras: «Umsatzerlöse» y
+    «UMSATZERLÖSE» (con la ö compuesta o descompuesta) quedan igual."""
+    text = unicodedata.normalize("NFKD", text)
+    return " ".join("".join(c for c in text if not unicodedata.combining(c)).lower().split())
+
+
+def column_name(term: str) -> str:
+    """Nombre de la columna del término en el CSV por página, en ASCII: gastos_com_pessoal."""
+    return fold(term).replace(" ", "_")
 
 
 @dataclass(frozen=True)
@@ -83,9 +100,9 @@ def measure(path: Path) -> TextLayer:
     }
     for number, text in enumerate(texts, start=1):
         chars_per_page.append(sum(not char.isspace() for char in text))
-        normalized = " ".join(text.lower().split())
+        normalized = fold(text)
         for term, pages in keyword_pages.items():
-            if term in normalized:
+            if fold(term) in normalized:
                 pages.append(number)
     return TextLayer(
         chars_per_page=tuple(chars_per_page),

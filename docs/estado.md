@@ -285,9 +285,9 @@ Todo en miles. Cuadres: 296, todos con diferencia 0. Las páginas y filas de cad
    - `text-layer` incluye ya el 20-F 2025: sus 157 páginas tienen texto.
 6. **Tests:** 92, en verde.
 
-## Fase 2f: Dortmund en alemán e indemnizaciones informadas, 2024/25 (hecha, a falta del OK)
+## Fase 2f: Dortmund en alemán e indemnizaciones informadas, 2024/25 (cerrada)
 
-Hecha el 27/09/2026. No se ha convertido nada a EUR. Lazio y FC Porto siguen pendientes.
+Hecha y cerrada el 27/09/2026 con el OK del usuario, que comprobó el CI de `c4205ca`. Es la tabla vigente de 2024/25. No se ha convertido nada a EUR. Lazio y FC Porto siguen pendientes.
 
 **Resultado** (`python -m pitch_to_balance_sheet extract`, exit 0), en miles de la moneda de cada club. Un * marca las cifras derivadas. En las indemnizaciones, entre paréntesis, si están dentro del total de personal:
 
@@ -323,6 +323,28 @@ Todo en miles. Cuadres: 325, todos con diferencia 0. Las páginas y filas de cad
    - Si el OCR lee mal una de esas cifras, la lectura en la imagen se anota en la especificación, con el recorte de la línea.
    - Si más adelante el OCR la lee bien, es un error: la anotación sobraría.
 5. **Tests:** 98, en verde.
+
+## `text-layer` en cinco idiomas (hecho el 27/09/2026)
+
+Pedido por el usuario al cerrar la fase 2f. Las palabras clave del diagnóstico se buscan ahora en cinco idiomas, sin distinguir mayúsculas ni acentos:
+
+| Idioma | Ingresos | Personal |
+| --- | --- | --- |
+| Inglés | turnover, revenue | staff costs, wages |
+| Alemán | Umsatzerlöse | Personalaufwand |
+| Italiano | ricavi | personale |
+| Neerlandés | omzet | personeelskosten |
+| Portugués | rendimentos | gastos com pessoal |
+
+- **CSV por página:** `data/processed/text_layer_2024_25.csv` tiene una columna por término, en ASCII (`umsatzerlose`, `gastos_com_pessoal`).
+- **Resultado (exit 0):** todos los PDFs con texto encuentran sus palabras clave en su idioma.
+  - Dortmund en alemán: Umsatzerlöse y Personalaufwand.
+  - Juventus en italiano: ricavi y personale.
+  - Ajax: omzet y personeelskosten.
+  - Benfica: rendimentos y gastos com pessoal.
+  - Los escaneados siguen sin ninguna, porque no tienen capa de texto.
+- **Falso positivo:** la búsqueda es por subcadena, así que «personale» aparece en la pág. 27 del alemán, dentro de «Personalentscheidung». Es solo un diagnóstico: no afecta a la extracción.
+- **Tests:** 99, en verde.
 
 ## Decisiones
 
@@ -399,7 +421,7 @@ Tomadas por el usuario el 27/09/2026 (fase 2f):
 42. **Casos dudosos:** Tottenham, Benfica y Juventus no cuentan como excepcionales. Van en `staff_severance_disclosed`, con la columna `included_in_staff_costs`, y no ajustan ninguna métrica.
 43. **Benfica:** se queda la SAD.
 
-Tomadas en la fase 2f, a falta del OK del usuario:
+Tomadas en la fase 2f y aceptadas por el usuario el 27/09/2026:
 
 44. **`included_in_staff_costs`** tiene tres valores: `true`, `false` o `dudoso`. Se rellena también en `staff_costs_exceptional` y queda vacío en los demás conceptos.
 45. **Cifras que solo están en una frase:**
@@ -410,7 +432,6 @@ Tomadas en la fase 2f, a falta del OK del usuario:
 
 | Pendiente | Para cuándo | Detalle |
 | --- | --- | --- |
-| OK a la fase 2f | Antes de seguir | La tabla de 12 clubes y las decisiones 44 y 45 |
 | PDF manual de Arsenal | Opcional | Si el usuario lo deja en `data/raw/manual/arsenal_2024-25.pdf`, pasa a ser la fuente principal. Hay que añadirlo a `sources.yaml` con su URL y registrarlo |
 | ESEF de Lazio 2024/25 | Antes de decidir OCR para Lazio | El club dice que está en el portal 1info, pero la dirección que da devuelve 404 |
 | Informe anual 2024/25 completo de FC Porto | Fase 2 | La CMVM vuelve después del 27/09/2026 a las 18:00. Mientras tanto solo hay el comunicado de resultados, que no trae notas. fcporto.pt respondió 200 el 26/09/2026, pero no tiene enlaces en el HTML |
@@ -420,6 +441,6 @@ El resto de comprobaciones de la fase 2 está en la sección 7.1 y en los riesgo
 
 ## Siguiente paso
 
-1. El usuario revisa la tabla de la fase 2f y las decisiones 44 y 45.
+1. Cowork trabaja en la carpeta desde el 27/09/2026, después del commit de `text-layer` multilingüe. Al volver a Claude Code: leer este archivo, `git status` y `git log`, y ver qué ha cambiado antes de tocar nada.
 2. Después del 27/09/2026 a las 18:00, volver a la CMVM para buscar el informe anual 2024/25 de FC Porto; y el ESEF de Lazio.
 3. Con los 14 clubes: conversión a EUR con los tipos del BCE (sección 5 del plan) y tabla consolidada.
