@@ -4,8 +4,9 @@
 # primary: de ahí salen las cifras. controls: sirven para contrastarlas.
 # kind:
 #   companies_house: cuentas depositadas, por la API (python -m pitch_to_balance_sheet download).
-#   url: PDF de la web del club; su robots.txt permite la descarga automática
-#        (python -m pitch_to_balance_sheet download-web). Se guarda en data/raw/<file>.
+#   url: archivo de la web (un PDF, o un ZIP ESEF como el de Lazio); su robots.txt permite la
+#        descarga automática (python -m pitch_to_balance_sheet download-web). Se guarda en
+#        data/raw/<file>.
 #   manual: PDF descargado a mano a data/raw/<file>. Se registra en data/raw/manifest.csv
 #           (python -m pitch_to_balance_sheet register-manual) y el pipeline comprueba su sha256:
 #           si falta el archivo o ha cambiado, sale con error.
@@ -13,7 +14,8 @@
 #
 # Manchester United, Dortmund, Ajax y Benfica: decisión del usuario del 27/09/2026, con las URLs
 # de docs/plan.md, sección 6. El robots.txt de cada dominio se comprueba al descargar.
-# Lazio y FC Porto: pendientes (docs/estado.md), sin fuente fijada.
+# Lazio y FC Porto: decisión del usuario del 27/09/2026, con las fuentes localizadas en
+# docs/fuentes-pendientes.md, sección 6.
 "2024/25":
   arsenal:
     # Si aparece data/raw/manual/arsenal_2024-25.pdf, pasa a ser la fuente principal.
@@ -100,3 +102,26 @@
       url: https://media.slbenfica.pt/-/media/BenficaDP/Images/Instituicao/SAD/prestacao-de-contas/anuais/20251001-relatorio-contas-24-25
       file: web/benfica_2024-25.pdf
       note: Relatório e Contas 2024/25, en portugués.
+  lazio:
+    primary:
+      kind: url
+      url: https://www.1info.it/PdfViewer/PdfShow.aspx?service=&type=documenti&year=2025&file=159386_oneinfo.zip&download=1
+      file: web/lazio_2024-25_esef.zip
+      note: >-
+        Relazione finanziaria annuale separata e consolidata al 30.06.2025, paquete ESEF (XHTML con
+        iXBRL) del portal 1info, protocolo 159386_oneinfo. Se usan las cuentas consolidadas.
+  porto:
+    primary:
+      kind: manual
+      file: manual/porto_2024-25.pdf
+      url: https://www.cmvm.pt/PInstitucional/PdfViewerInfPriv?Input=EBA43BC8F4EB22A844F75CC1AC19DCE1954A814A216A036952C6F2AD11B1DA92
+      note: >-
+        Relatório Anual Integrado 2024/2025, versão não ESEF, descargado a mano del visor de la
+        CMVM. Se usan las cuentas consolidadas. El ESEF no se ha podido descargar: queda fuera.
+    controls:
+      - kind: url
+        url: https://transparencia.fcporto.pt/assets/uploads/financeira/ComunicadoDivulgacaoResultados20242025.pdf
+        file: web/porto_comunicado_2024-25.pdf
+        note: >-
+          Comunicado de resultados 2024/25 del portal de transparencia. Las cifras que trae tienen
+          que coincidir; las que no trae quedan sin control.

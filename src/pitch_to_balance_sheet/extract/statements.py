@@ -11,15 +11,18 @@ Reglas:
 - Un control (otro documento del mismo club) tiene que dar las mismas cifras.
 - Una cifra que solo está en una frase (sin tabla) se localiza por su frase; si el OCR la lee
   mal, la lectura en la imagen queda anotada en la cifra.
+- En un paquete ESEF las cifras salen de hechos iXBRL (extract/ixbrl.py), citados por su
+  etiqueta y su contexto; los cuadres usan los pesos del linkbase de cálculo del emisor.
 """
 
 import re
 from dataclasses import dataclass, field
+from decimal import Decimal
 from pathlib import Path
 
 from PIL import Image
 
-from pitch_to_balance_sheet.extract import ocr, pdf_text
+from pitch_to_balance_sheet.extract import ixbrl, ocr, pdf_text
 from pitch_to_balance_sheet.extract.tables import (
     UNIT_HEADER,
     Amount,
@@ -171,6 +174,38 @@ class DocumentSpec:
     # Si la especificación todavía no se puede escribir (p. ej. falta el PDF), el motivo.
     pending: str | None = None
     sentences: tuple[SentenceFigureSpec, ...] = ()
+    # Solo en controles: conceptos de la fuente que este documento no trae, con el motivo.
+    without: dict[str, str] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class Calc:
+    """Cuadre de un documento iXBRL: total = suma de las partes por su peso (+1 o -1). Si el
+    linkbase de cálculo del emisor tiene el arco, el peso tiene que ser el mismo."""
+
+    total: str
+    parts: tuple[tuple[str, int], ...]
+
+
+@dataclass(frozen=True)
+class IxbrlDocumentSpec:
+    """Un paquete ESEF: las cifras salen de hechos iXBRL, citados por su etiqueta y contexto."""
+
+    entity: str  # identificador de la entidad en los contextos (el LEI)
+    periods: dict[str, str]  # columna -> periodo del contexto, "2024-07-01/2025-06-30"
+    unit: str  # unidad de los hechos, p. ej. "iso4217:EUR"
+    concepts: dict[str, str]  # clave -> concepto iXBRL
+    calcs: tuple[Calc, ...]
+    figures: tuple[FigureSpec, ...]  # partes: ("ixbrl", clave)
+    unit_divisor: int = 1000  # de la unidad del iXBRL (euros) a la del club (miles)
+    # Perímetro: los contextos sin dimensiones, que en ESEF son las cuentas consolidadas.
+    dimensions: tuple[tuple[str, str], ...] = ()
+    method: str = "ixbrl"
+    control_index: int | None = None
+    control_kind: str = "identical"
+    pending: str | None = None
+    sentences: tuple[SentenceFigureSpec, ...] = ()
+    without: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -210,8 +245,9 @@ class Component:
     column: str
     sign: int
     amount: Amount
-    row: object  # fila de la imagen, para el recorte
-    image_path: Path
+    row: object  # fila de la imagen (o hecho iXBRL), para el recorte
+    image_path: Path | None
+    reference: str = ""  # en iXBRL: etiqueta, contexto e id del hecho, en lugar de la fila
 
 
 @dataclass(frozen=True)
@@ -246,8 +282,8 @@ class Figure:
     def sources(self) -> str:
         """Fuente de cada componente: página, fila, columna e importe."""
         return " ; ".join(
-            f"{'−' if c.sign < 0 else '+'} pág. {c.page} {c.label or '(total sin rótulo)'!r} "
-            f"[{c.column}] {c.amount.value:,}"
+            f"{'−' if c.sign < 0 else '+'} {c.reference + ', ' if c.reference else ''}"
+            f"pág. {c.page} {c.label or '(total sin rótulo)'!r} [{c.column}] {c.amount.value:,}"
             for c in self.components
         ) + (" (signo cambiado: el informe lo da en negativo)" if self.negated else "")
 
@@ -278,6 +314,8 @@ class LoadedTable:
 
 
 def ocr_note(amounts: tuple[Amount, ...], method: str) -> str:
+    if method == "ixbrl":  # sin OCR: se anota la escala de cada hecho
+        return "iXBRL, sin OCR: " + "; ".join(dict.fromkeys(f for a in amounts for f in a.fixes))
     notes = []
     for amount in amounts:
         if amount.second_pass:
@@ -451,10 +489,79 @@ def _page(method: str, pdf_path: Path, sha256: str, page: int, interim: Path, re
             pdf_text.page_image(pdf_path, sha256, page, interim / "text"))
 
 
+def _exact(value: Decimal) -> int | Decimal:
+    """Entero si lo es; si no, el decimal exacto (sin redondear)."""
+    return int(value) if value == value.to_integral_value() else value
+
+
+def read_ixbrl_document(name: str, spec: IxbrlDocumentSpec, path: Path) -> DocumentResult:
+    """Cifras y cuadres de un paquete ESEF. Los cuadres van en la unidad del iXBRL (euros);
+    las cifras, en la del club (miles), sin redondear."""
+    try:
+        report = ixbrl.read_report(path)
+        facts = {(key, column): report.find(concept, spec.entity, period, spec.dimensions)
+                 for key, concept in spec.concepts.items()
+                 for column, period in spec.periods.items()}
+    except ixbrl.IxbrlError as exc:
+        raise ExtractionError(str(exc)) from exc
+    for fact in facts.values():
+        if fact.unit != spec.unit:
+            raise ExtractionError(f"{fact.concept} ({fact.id}) está en {fact.unit}, no en "
+                                  f"{spec.unit}")
+
+    checks = []
+    for calc in spec.calcs:
+        terms = []
+        for key, weight in calc.parts:
+            arc = (ixbrl.concept_key(spec.concepts[calc.total]),
+                   ixbrl.concept_key(spec.concepts[key]))
+            declared = report.calculations.get(arc)
+            if declared is not None and declared != weight:
+                raise ExtractionError(
+                    f"{calc.total}: {key} va con peso {weight:+d} y el linkbase de cálculo del "
+                    f"emisor le da {declared:+}")
+            terms.append(f"{'−' if weight < 0 else '+'} {key}"
+                         + ("" if declared is not None else " (sin arco en el linkbase)"))
+        relation = f"{calc.total} = " + " ".join(terms).removeprefix("+ ")
+        for column in spec.periods:
+            total = facts[(calc.total, column)]
+            computed = sum(weight * facts[(key, column)].value for key, weight in calc.parts)
+            cells = tuple(("ixbrl", key, column) for key in (calc.total, *dict(calc.parts)))
+            checks.append(Check(name, total.page, relation, column, _exact(total.value),
+                                _exact(computed), cells))
+
+    figures = []
+    for figure_spec in spec.figures:
+        components = []
+        for part in figure_spec.resolved():
+            column = part.column or figure_spec.column
+            fact = facts[(part.row, column)]
+            value = _exact(fact.value / spec.unit_divisor)
+            places = Decimal(1).scaleb(-(len(str(spec.unit_divisor)) - 1))  # 0.001 en miles
+            if isinstance(value, Decimal) and value.quantize(places) == value:
+                value = value.quantize(places)  # mismos decimales en todas, sin redondear
+            scale_note = (f"{fact.unit} con scale {fact.scale} y decimals {fact.decimals}; "
+                          f"÷{spec.unit_divisor:,} a la unidad del club, sin redondear")
+            period = fact.context.period.replace("/", "–")
+            components.append(Component(
+                fact.page, fact.label, column, part.sign, Amount(value, fact.raw, (scale_note,)),
+                fact, None,
+                reference=f"{fact.concept} [contexto {fact.context.id}, {period}, sin "
+                          f"dimensiones; hecho {fact.id}]"))
+        value = sum(c.sign * c.amount.value for c in components)
+        figures.append(Figure(
+            figure_spec.concept, figure_spec.column, -value if figure_spec.negate else value,
+            tuple(components), "ixbrl", figure_spec.note, figure_spec.negate,
+            figure_spec.included_in_staff_costs))
+    return DocumentResult(name, figures, checks, [], {})
+
+
 def read_document(name: str, spec: DocumentSpec, pdf_path: Path, sha256: str,
                   interim: Path, reocr: bool = False) -> DocumentResult:
     if spec.pending:
         raise ExtractionError(spec.pending)
+    if spec.method == "ixbrl":
+        return read_ixbrl_document(name, spec, pdf_path)
     loaded: dict[str, LoadedTable] = {}
     for table_spec in spec.tables:
         page = table_spec.page
@@ -523,8 +630,13 @@ def read_document(name: str, spec: DocumentSpec, pdf_path: Path, sha256: str,
     used = {cell for check in checks for cell in check.cells} | figure_cells
     for cell in sorted(used):
         if _amount(loaded, cell).dash and cell not in covered:
+            failing = [check for check in checks if cell in check.cells and not check.ok]
+            reason = "ningún cuadre lo respalda" if not failing else (
+                "el cuadre que lo contiene no cuadra: " + "; ".join(
+                    f"{c.relation} [{c.column}] {c.reported:,} frente a {c.computed:,} "
+                    f"(diferencia {c.difference:,})" for c in failing))
             raise ExtractionError(f"pág. {loaded[cell[0]].spec.page}: el guion de {cell[1]} "
-                                  f"[{cell[2]}] se leyó como cero y ningún cuadre lo respalda")
+                                  f"[{cell[2]}] se leyó como cero y {reason}")
 
     notes, summary = _corrections(loaded)
     for sentence in spec.sentences:

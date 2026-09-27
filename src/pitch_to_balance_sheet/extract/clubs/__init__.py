@@ -8,15 +8,18 @@ from pitch_to_balance_sheet.extract.clubs import (
     celtic,
     chelsea,
     juventus,
+    lazio,
     liverpool,
     manchester_city,
     manchester_united,
     newcastle,
+    porto,
     tottenham,
 )
 
 SPECS = {
     module.SPEC.club_id: module.SPEC
     for module in (arsenal, chelsea, liverpool, manchester_city, tottenham, newcastle,
-                   manchester_united, juventus, borussia_dortmund, celtic, ajax, benfica)
+                   manchester_united, juventus, borussia_dortmund, celtic, ajax, benfica,
+                   lazio, porto)
 }

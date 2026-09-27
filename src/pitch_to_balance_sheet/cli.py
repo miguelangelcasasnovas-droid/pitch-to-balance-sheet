@@ -91,7 +91,7 @@ def download(season: str) -> int:
 
 
 def download_web(season: str) -> int:
-    """Descarga los PDFs de la web (fuentes url) que falten y los registra en el manifiesto."""
+    """Descarga los archivos de la web (fuentes url) que falten y los registra en el manifiesto."""
     errors = []
     for club_id, club_sources in load_sources(season).items():
         for source in club_sources.all:
@@ -107,7 +107,7 @@ def download_web(season: str) -> int:
                              source.file)
                 continue
             try:
-                entry = web.download_pdf(source.url, RAW_DIR, source.file)
+                entry = web.download_file(source.url, RAW_DIR, source.file)
             except web.WebDownloadError as exc:
                 errors.append(f"{club_id}: {exc}")
                 continue
@@ -168,7 +168,7 @@ def _pages_summary(pages: tuple[int, ...]) -> str:
 
 def text_layer(season: str) -> int:
     names = {club.club_id: club.name for club in load_clubs()}
-    rows, summary, per_page, errors, not_downloaded = [], [], [], [], []
+    rows, summary, per_page, errors, not_downloaded, not_pdf = [], [], [], [], [], []
     for club_id, club_sources in load_sources(season).items():
         for source in club_sources.all:
             label = f"{names.get(club_id, club_id)} · {SOURCE_NAMES[source.kind]}"
@@ -179,6 +179,9 @@ def text_layer(season: str) -> int:
                 continue
             if pdf is None:
                 not_downloaded.append(label)
+                continue
+            if not pdf.lower().endswith(".pdf"):
+                not_pdf.append(f"{label} ({pdf})")
                 continue
             try:
                 layer = measure(RAW_DIR / pdf)
@@ -223,6 +226,9 @@ def text_layer(season: str) -> int:
     print("\n".join(per_page))
     if not_downloaded:
         print(f"\nSin medir, URL todavía sin descargar: {', '.join(not_downloaded)}")
+    if not_pdf:
+        print(f"\nSin medir, no es un PDF (paquete ESEF, se lee con el lector de iXBRL): "
+              f"{', '.join(not_pdf)}")
     if rows:
         print(f"Detalle por página en {out.relative_to(ROOT)}")
     for error in errors:

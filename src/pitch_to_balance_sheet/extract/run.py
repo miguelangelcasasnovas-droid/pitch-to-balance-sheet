@@ -5,7 +5,9 @@ coincide) queda en error con el motivo, y se sigue con el siguiente.
 """
 
 import csv
+import html
 from dataclasses import dataclass, field
+from decimal import Decimal
 
 from PIL import Image
 
@@ -34,6 +36,8 @@ CONCEPTS = ("revenue_total_reported", "revenue_ex_player_trading", "staff_costs"
 # Marca de la tabla: si la indemnización está dentro de los gastos de personal.
 INCLUDED_MARKS = {"true": " (dentro)", "false": " (fuera)", "dudoso": " (¿dentro?)"}
 RESTATEMENT_THRESHOLD_PCT = 1.0  # sección 5 del plan
+METHODS = {"text": "pdfplumber (texto del PDF)",
+           "ixbrl": "iXBRL (ix:nonFraction del XHTML del paquete ESEF)"}
 
 
 @dataclass(frozen=True)
@@ -82,6 +86,25 @@ class ClubResult:
         return [check for check in self.checks if not check.ok]
 
 
+def excerpt_figure(figure: Figure, path) -> None:
+    """Recorte de una cifra iXBRL: la fila de la tabla del XHTML de cada hecho, con su etiqueta,
+    contexto, unidad y escala."""
+    parts = []
+    for component in figure.components:
+        fact = component.row
+        parts.append(
+            f"<h2>{html.escape(fact.concept)}</h2>\n<p>Contexto {html.escape(fact.context.id)} "
+            f"({html.escape(fact.context.period)}), unidad {html.escape(fact.unit)}, scale "
+            f"{fact.scale}, decimals {html.escape(fact.decimals)}, hecho {html.escape(fact.id)}, "
+            f"pág. {fact.page} del XHTML. Texto: «{html.escape(fact.raw)}»"
+            f"{' con signo menos' if fact.sign == '-' else ''}.</p>\n"
+            f"<table border=\"1\">{fact.row_html}</table>")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("<!DOCTYPE html>\n<html><head><meta charset=\"utf-8\"><title>"
+                    f"{html.escape(figure.concept)}</title></head><body>\n"
+                    + "\n".join(parts) + "\n</body></html>\n", encoding="utf-8")
+
+
 def crop_figure(figure: Figure, path) -> None:
     """Recorte de cada fila que entra en la cifra (sin repetir), apiladas si son varias."""
     crops, seen = [], set()
@@ -126,10 +149,18 @@ def extract_club(season: str, spec: ClubSpec, reocr: bool = False) -> ClubResult
             result.checks += other.checks
             result.corrections += [f"{name}: {note}" for note in other.corrections]
             twins = {figure.concept: figure for figure in other.figures}
+            stale = set(control.without) & set(twins)
+            if stale:
+                raise ExtractionError(f"el {name} sí trae {', '.join(sorted(stale))}: quítalo "
+                                      "de without")
+            uncontrolled = []
             for figure in primary.figures:
                 twin = twins.get(figure.concept)
                 if twin is None:
-                    raise ExtractionError(f"el {name} no tiene {figure.concept}")
+                    if figure.concept not in control.without:
+                        raise ExtractionError(f"el {name} no tiene {figure.concept}")
+                    uncontrolled.append(f"{figure.concept} ({control.without[figure.concept]})")
+                    continue
                 if control.control_kind == "restatement":
                     result.restatements.append(Restatement(name, figure.concept, twin.page,
                                                            figure.value, twin.value))
@@ -144,18 +175,42 @@ def extract_club(season: str, spec: ClubSpec, reocr: bool = False) -> ClubResult
                         f"{r.concept} ({r.pct:.1f}%)" for r in marked)
                     if marked else f"{name}: sin reexpresión (>{RESTATEMENT_THRESHOLD_PCT:g}%)")
             else:
-                result.controls.append(f"{name}: cifras idénticas")
+                compared = [c for c in result.checks
+                            if c.document == name and c.relation.endswith("principal = control")]
+                rounded = [c for c in compared if c.difference]
+                summary = f"{name}: cifras idénticas" if not rounded else (
+                    f"{name}: cifras idénticas salvo redondeo en " + ", ".join(
+                        f"{c.relation.split(':')[0]} ({c.reported:,} frente a {c.computed:,})"
+                        for c in rounded))
+                if uncontrolled:
+                    summary += "; sin control: " + ", ".join(uncontrolled)
+                result.controls.append(summary)
     except (manifest.ManifestError, ExtractionError, ocr.OcrError) as exc:
         result.error = str(exc)
+        if result.failed:  # lo que ya no cuadraba antes del error, para que no se pierda
+            result.error += (f"; además, {len(result.failed)} de {len(result.checks)} cuadres "
+                             "no cuadran")
         return result
     slug = f"{spec.club_id}_{season_slug(season)}"
     for figure in result.figures:
         path = INTERIM_DIR / "recortes" / f"{slug}_{figure.concept}_p{figure.page}.png"
-        crop_figure(figure, path)
+        if figure.method == "ixbrl":
+            path = path.with_suffix(".html")
+            excerpt_figure(figure, path)
+        else:
+            crop_figure(figure, path)
         result.crops[figure.concept] = str(path.relative_to(ROOT))
     if result.failed:
         result.error = f"{len(result.failed)} de {len(result.checks)} cuadres no cuadran"
     return result
+
+
+def _full(value: int | Decimal, multiplier: int) -> int:
+    """La cifra en unidades de la moneda. Tiene que ser entera: no se redondea."""
+    full = value * multiplier
+    if full != int(full):
+        raise ValueError(f"{value} × {multiplier} no es un entero")
+    return int(full)
 
 
 def write_outputs(season: str, results: list[ClubResult]) -> list[str]:
@@ -173,7 +228,7 @@ def write_outputs(season: str, results: list[ClubResult]) -> list[str]:
                 "value_reported": figure.value,
                 "unit_reported": spec.unit,
                 "currency_reported": spec.currency,
-                "value_full": figure.value * spec.multiplier,
+                "value_full": _full(figure.value, spec.multiplier),
                 "is_derived": figure.is_derived,
                 "included_in_staff_costs": figure.included_in_staff_costs,
                 "components": figure.sources,
@@ -183,8 +238,7 @@ def write_outputs(season: str, results: list[ClubResult]) -> list[str]:
                 "label_original": figure.label,
                 "column": figure.column,
                 "sha256": result.sha256,
-                "extraction_method": (ocr.ENGINE if figure.method == "ocr"
-                                      else "pdfplumber (texto del PDF)"),
+                "extraction_method": METHODS.get(figure.method, ocr.ENGINE),
                 "ocr_note": figure.ocr_note,
                 "ocr_raw": " ; ".join(a.raw for a in figure.amounts),
                 "definition_note": figure.note,

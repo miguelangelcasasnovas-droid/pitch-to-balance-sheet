@@ -71,7 +71,8 @@ def test_un_cuadre_que_no_cuadra_se_marca(tmp_path):
 
 def test_un_guion_que_solo_esta_en_un_cuadre_que_falla_es_error(tmp_path):
     wrong = (Sum("net_result", ("turnover", "other_income")),)
-    with pytest.raises(ExtractionError, match="ningún cuadre lo respalda"):
+    with pytest.raises(ExtractionError, match="el cuadre que lo contiene no cuadra: net_result "
+                                              "= turnover \\+ other_income"):
         read_document("principal", spec(sums=wrong), TABLE, "fixture", tmp_path)
 
 
@@ -201,7 +202,7 @@ def test_la_segunda_lectura_de_una_celda_solo_pasa_vision_con_reocr(tmp_path, mo
 def test_las_especificaciones_de_los_clubes_se_cargan():
     from pitch_to_balance_sheet.extract.clubs import SPECS
 
-    assert len(SPECS) == 12
+    assert len(SPECS) == 14
     required = ["revenue_total_reported", "revenue_ex_player_trading", "staff_costs",
                 "net_result"]
     for club_spec in SPECS.values():
@@ -220,11 +221,15 @@ def test_las_especificaciones_de_los_clubes_se_cargan():
     assert included("staff_costs_exceptional") == {"manchester_united": "true",
                                                     "celtic": "dudoso"}
     assert included("staff_severance_disclosed") == {"tottenham": "false", "benfica": "true",
-                                                      "juventus": "true"}
+                                                      "juventus": "true", "porto": "true"}
     assert not any(d.pending for s in SPECS.values() for d in (s.primary, *s.controls))
     assert SPECS["borussia_dortmund"].primary.thousands == "."
     assert SPECS["borussia_dortmund"].controls[0].control_kind == "identical"
     assert SPECS["manchester_united"].controls[0].control_kind == "restatement"
+    assert SPECS["lazio"].primary.method == "ixbrl"
+    assert SPECS["lazio"].primary.periods["2025"] == "2024-07-01/2025-06-30"
+    assert SPECS["porto"].primary.tables[0].columns == ("2024", "2025")  # 2024 va antes
+    assert set(SPECS["porto"].controls[0].without) == {"staff_severance_disclosed"}
 
 
 def test_included_in_staff_costs_solo_admite_true_false_o_dudoso():

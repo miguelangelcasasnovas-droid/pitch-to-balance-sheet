@@ -81,7 +81,6 @@ def test_sources_yaml_recoge_las_decisiones_del_26_09_2026():
     assert juventus.primary.file == "web/juventus_2024-25_it.pdf"
     assert [c.file for c in juventus.controls] == ["web/juventus_2024-25_en.pdf"]
     assert sources["celtic"].primary.file == "web/celtic_2024-25.pdf"
-    assert not {"lazio", "porto"} & set(sources)  # pendientes
 
 
 @pytest.mark.parametrize("kind", ["manual", "url"])
@@ -93,11 +92,12 @@ def test_fuente_manual_o_web_sin_archivo_es_error(tmp_path, kind):
         load_sources("2024/25", path)
 
 
-def test_clubs_yaml_tiene_los_seis_ingleses_y_seis_cotizados():
+def test_clubs_yaml_tiene_los_seis_ingleses_y_ocho_cotizados():
     clubs = load_clubs()
     assert [club.club_id for club in clubs] == [
         "arsenal", "chelsea", "liverpool", "manchester_city", "tottenham", "newcastle",
         "juventus", "celtic", "manchester_united", "borussia_dortmund", "ajax", "benfica",
+        "lazio", "porto",
     ]
     english = clubs[:6]
     assert all(len(club.companies_house_number) == 8 for club in english)
@@ -116,3 +116,15 @@ def test_sources_yaml_tiene_las_fuentes_de_las_fases_2d_y_2e():
     assert (dortmund.primary.kind, dortmund.primary.file) == (
         "manual", "manual/borussia_dortmund_2024-25_de.pdf")
     assert [c.file for c in dortmund.controls] == ["web/borussia_dortmund_2024-25_en.pdf"]
+
+
+def test_sources_yaml_tiene_lazio_y_porto():
+    sources = load_sources("2024/25")
+    lazio = sources["lazio"]
+    assert (lazio.primary.kind, lazio.primary.file) == ("url", "web/lazio_2024-25_esef.zip")
+    assert "1info.it" in lazio.primary.url and "159386_oneinfo.zip" in lazio.primary.url
+    porto = sources["porto"]
+    assert (porto.primary.kind, porto.primary.file) == ("manual", "manual/porto_2024-25.pdf")
+    assert [(c.kind, c.file) for c in porto.controls] == [
+        ("url", "web/porto_comunicado_2024-25.pdf")]
+    assert porto.controls[0].url.startswith("https://transparencia.fcporto.pt/")

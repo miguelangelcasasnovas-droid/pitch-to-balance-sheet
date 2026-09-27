@@ -1,10 +1,10 @@
-"""Descarga de los PDFs de la web de los clubes: fuentes `url` de config/sources.yaml.
+"""Descarga de los archivos de la web: fuentes `url` de config/sources.yaml.
 
 Antes de descargar se lee el robots.txt del dominio (RFC 9309): si responde 4xx no hay
 restricciones; si responde 5xx o no se puede leer, se supone que todo está prohibido; si
 responde 200, se aplican sus reglas. Si no se permite, WebDownloadError y hay que descargarlo a
-mano. Cada archivo tiene que ser un PDF y se registra en el manifiesto con su URL, fecha y
-sha256.
+mano. Cada archivo tiene que ser del formato de su extensión (un PDF, o un ZIP como los
+paquetes ESEF) y se registra en el manifiesto con su URL, fecha y sha256.
 """
 
 import logging
@@ -25,10 +25,12 @@ ROBOTS_AGENT = "pitch-to-balance-sheet"
 ATTEMPTS = 3
 BACKOFF_S = 5.0
 TIMEOUT_S = 120
+# Extensión -> (firma con la que empieza el archivo, content_type del manifiesto).
+FORMATS = {".pdf": (b"%PDF-", "application/pdf"), ".zip": (b"PK\x03\x04", "application/zip")}
 
 
 class WebDownloadError(RuntimeError):
-    """Un PDF de la web no se pudo descargar o no es un PDF."""
+    """Un archivo de la web no se pudo descargar o no es del formato esperado."""
 
 
 def robots_allows(url: str, session=None) -> tuple[bool, str]:
@@ -53,8 +55,13 @@ def robots_allows(url: str, session=None) -> tuple[bool, str]:
     return allowed, f"{robots_url} {'permite' if allowed else 'no permite'} esta ruta"
 
 
-def download_pdf(url: str, raw_dir: Path, file: str, session=None,
-                 sleep=time.sleep) -> ManifestEntry:
+def download_file(url: str, raw_dir: Path, file: str, session=None,
+                  sleep=time.sleep) -> ManifestEntry:
+    suffix = Path(file).suffix.lower()
+    if suffix not in FORMATS:
+        raise WebDownloadError(f"{file}: formato {suffix!r} no previsto; se esperan "
+                               f"{', '.join(FORMATS)}")
+    signature, content_type = FORMATS[suffix]
     session = session or requests.Session()
     allowed, why = robots_allows(url, session)
     if not allowed:
@@ -78,8 +85,8 @@ def download_pdf(url: str, raw_dir: Path, file: str, session=None,
     else:
         raise WebDownloadError(f"{reason} en {url} tras {ATTEMPTS} intentos")
     content = response.content
-    if not content.startswith(b"%PDF-"):
-        raise WebDownloadError(f"{url} no devolvió un PDF")
+    if not content.startswith(signature):
+        raise WebDownloadError(f"{url} no devolvió un {suffix[1:].upper()}")
     path = raw_dir / file
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(content)
@@ -89,5 +96,5 @@ def download_pdf(url: str, raw_dir: Path, file: str, session=None,
         retrieved_at=datetime.now(UTC).isoformat(timespec="seconds"),
         sha256=sha256_bytes(content),
         bytes=len(content),
-        content_type="application/pdf",
+        content_type=content_type,
     )

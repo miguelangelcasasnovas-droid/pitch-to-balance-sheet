@@ -67,3 +67,15 @@ clubs:
     entity: Sport Lisboa e Benfica - Futebol, SAD
     companies_house_number: null
     fiscal_year_end: "06-30"
+  # Fuente: docs/plan.md, sección 6. Cierre: Lazio, "al 30.06.2025" en el título del ESEF; Porto,
+  # posición financiera a 30/06/2024 y 30/06/2025 en su comunicado (docs/fuentes-pendientes.md).
+  - club_id: lazio
+    name: Lazio
+    entity: S.S. Lazio S.p.A.
+    companies_house_number: null
+    fiscal_year_end: "06-30"
+  - club_id: porto
+    name: FC Porto
+    entity: Futebol Clube do Porto - Futebol, SAD
+    companies_house_number: null
+    fiscal_year_end: "06-30"

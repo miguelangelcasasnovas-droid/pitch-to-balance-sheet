@@ -1,6 +1,6 @@
 # Estado del proyecto
 
-Actualizado: 27/09/2026 (fase 2f y fuentes de Lazio y FC Porto)
+Actualizado: 27/09/2026 (fase 2g)
 
 ## Fase 0: cerrada
 
@@ -359,6 +359,50 @@ Hecho en Cowork, sin tocar `config/`, `src/` ni `data/` y sin extraer cifras. El
 - **Porto también publica la versión ESEF** en la CMVM, que según la propia CMVM es la oficial y prevalece si difiere del PDF. Tampoco tiene URL: se baja con el botón "Download ZIP".
 - **Pendiente de medir con pdfplumber:** el PDF de Porto, cuando esté en `data/raw/manual/`.
 
+## Fase 2g: Lazio (ESEF) y FC Porto, 2024/25 (hecha, a falta del OK)
+
+Hecha el 27/09/2026. Antes de empezar se subieron tal cual, en un commit aparte (`28d2e1d`), los cambios de Cowork en `estado.md` y `fuentes-pendientes.md`. No se ha convertido nada a EUR ni se ha empezado la fase 3a.
+
+**Resultado** (`python -m pitch_to_balance_sheet extract`, exit 1 por Porto), en miles de la moneda de cada club. Las 12 filas anteriores no cambian (tabla de la fase 2f):
+
+| Club | Fuente | Ingresos publicados | Ingresos sin traspasos | Personal | Indemnizaciones informadas | Resultado neto | Cuadres | Controles |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Lazio | ESEF de 1info (iXBRL) | 146,041.028 | 143,141.203 * | 98,188.576 | — | (17,164.480) | OK, 12/12 | — |
+| FC Porto | PDF manual de la CMVM (texto) | — | — | — | — | — | **FALLA, 15/16** | — |
+
+Cuadres guardados: 353, y el único que falla es el de la nota 27 de Porto. Los del comunicado no llegan a guardarse, porque el control se corta en el error. Lazio va en miles con tres decimales exactos: el iXBRL da euros.
+
+1. **Lazio:**
+   - **Fuente:** el ZIP ESEF de 1info, descargado con `download-web` (robots.txt 404: sin restricciones). 2.306.292 bytes, sha256 `e46d5439…05cf`, el mismo que midió Cowork.
+   - **Lector de iXBRL:** `extract/ixbrl.py`, solo con la librería estándar (`zipfile` y `xml.etree`); no hace falta lxml. Lee 259 hechos numéricos, 44 contextos y 95 pesos del linkbase de cálculo.
+   - **Perímetro:** todos los contextos son de la entidad (LEI 81560036DCCA48CA0F08) y ninguno tiene dimensiones, así que todo lo etiquetado es consolidado (págs. 138 a 145 del XHTML). El periodo es 2024-07-01–2025-06-30.
+   - **Fuente de cada cifra:** la etiqueta, el contexto y el id del hecho, más la página del XHTML (141) y el rótulo de la fila. Por ejemplo, `ifrs-full:EmployeeBenefitsExpense` [c_0, hecho shtag_9800348], «Costo del personale».
+   - **Cuadres:** 6 relaciones × 2 años, en euros y con diferencia 0. Llevan los pesos del linkbase de cálculo del emisor, y la especificación falla si usa otro. El emisor suma las imposte differite (4.846.836, un ingreso) con peso +1, aunque la etiqueta es de gasto; así cuadra.
+   - **Ingresos sin traspasos:** TOTALE RICAVI (146.041.028) menos «Proventi da gestione diritti calciatori» (2.899.825), que según la nota 32 (pág. 193) son cesiones temporales y otros proventi de jugadores. Es la misma regla que en Juventus.
+   - **Indemnizaciones:** ninguna. La nota 36 (pág. 195) no las desglosa, y los 632 miles de «incentivi all'esodo» de la pág. 190 son una deuda, no un gasto del año.
+   - **Recorte:** no hay imagen. Para cada cifra se guarda en `data/interim/recortes/` un `.html` con la fila original del XHTML y el hecho etiquetado.
+   - **Unicode:** el paquete escribe «à» descompuesta en `ext:RicaviDaSponsorizzazioneEPubblicità`. Los nombres se comparan en NFC y se citan tal cual.
+2. **FC Porto:**
+   - **Fuente:** el PDF del visor de la CMVM, registrado con `register-manual` (52.410.765 bytes, sha256 `c4c675ff…a675`, el mismo que midió Cowork). pdfplumber: 238 de 259 páginas con texto, las mismas 21 por debajo del umbral que midió Cowork con pdf.js.
+   - **Control:** el comunicado, descargado con `download-web` (robots.txt 404). 927.572 bytes, sha256 `9503f421…86b5`, 8 de 8 páginas con texto.
+   - **Cifras leídas:**
+     - Cuenta de resultados en la pág. 117, mitad derecha, con 30.06.2024 antes que 30.06.2025.
+     - Ingresos 149,541, la suma derivada de Vendas + Prestações de serviços + Outros proveitos: la cuenta no tiene total.
+     - Personal 81,939 (nota 27, pág. 154). Indemnizações 3,005, dentro del total.
+     - Resultado neto 40,988, con los minoritarios.
+   - **Por qué falla:** dos cuadres del propio documento no cuadran, y se ha comprobado en la imagen que no es un error de lectura.
+     - La nota 27 (pág. 154): las filas de 2025 suman 81.937 y el total dice 81.939 (diferencia 2).
+     - En el comunicado (pág. 4), el desglose de los proveitos operacionais 2023/24 suma 174.497 y el total dice 174.499 (diferencia 2). Por eso el guion de «Provas FIFA» 2023/24 no tiene un cuadre que lo respalde.
+   - **Resto de diferencias:** la cuenta de la pág. 117 tiene además seis descuadres de 1, dentro de la tolerancia.
+   - **Diagnóstico en memoria, sin guardar:** con tolerancia 2 todo cuadraría. El control coincidiría en personal y resultado neto, y en ingresos con 1 de diferencia (149,541 frente a 149,540).
+3. **Motor:**
+   - `download-web` baja también ZIP: el formato sale de la extensión y se comprueba la firma.
+   - Especificación iXBRL y cuadres ponderados.
+   - Un control puede declarar qué conceptos no trae, con el motivo (`without`). El resumen del control dice si las cifras coinciden salvo redondeo.
+   - El error de un guion sin respaldo nombra el cuadre que falla.
+   - `text-layer` se salta los paquetes ESEF y lo dice.
+4. **Tests:** 116, en verde. El lector de iXBRL se prueba con un paquete sintético sin datos reales (`tests/fixtures/esef_sintetico/`).
+
 ## Decisiones
 
 1. **Carpeta de trabajo:** `~/football-club-finance`.
@@ -441,19 +485,30 @@ Tomadas en la fase 2f y aceptadas por el usuario el 27/09/2026:
     - La lectura en la imagen, cuando el OCR falla, va escrita en la especificación del club, con el recorte y la nota.
     - Solo se acepta si la frase se localiza por su texto y la cifra del año anterior, y si la escala da una división exacta.
 
+Tomadas por el usuario el 27/09/2026 (fase 2g):
+
+46. **Lazio:** el ESEF de 1info, cuentas consolidadas, leído por sus etiquetas iXBRL.
+47. **Porto:** las cuentas consolidadas del PDF manual; el ESEF queda fuera. Control: el comunicado de resultados, con cifras idénticas en lo que traiga y lo demás sin control, anotado.
+
+Tomadas en la fase 2g, a falta del OK del usuario:
+
+48. **Lazio en miles con decimales exactos** (146,041.028): el iXBRL da euros y no se redondea. Los cuadres se hacen en euros.
+49. **Cifras iXBRL sin recorte PNG:** el recorte es un `.html` con la fila original del XHTML y el hecho etiquetado.
+50. **Ingresos de Porto:** la suma de las tres líneas de la cuenta (149,541, derivada). La alternativa es el total publicado en la nota 33 (pág. 158) y en el comunicado, 149.540.
+51. **Resultado neto de Porto:** el consolidado total con minoritarios (40,988), como en el resto de clubes; atribuible a la matriz, 39.240.
+
 ## Pendientes
 
 | Pendiente | Para cuándo | Detalle |
 | --- | --- | --- |
 | PDF manual de Arsenal | Opcional | Si el usuario lo deja en `data/raw/manual/arsenal_2024-25.pdf`, pasa a ser la fuente principal. Hay que añadirlo a `sources.yaml` con su URL y registrarlo |
-| Fuente de Lazio 2024/25 | Antes de extraer Lazio | ESEF localizado en 1info el 27/09/2026, con texto y descarga directa. Falta decidir si pasa a ser la fuente y escribir su lector, porque es XHTML con iXBRL y no PDF |
-| Fuente de FC Porto 2024/25 | Antes de extraer Porto | Informe anual localizado en la CMVM el 27/09/2026, en PDF con texto y en ESEF. Ninguno tiene URL de descarga. Falta decidir cuál (con la decisión 40, las cuentas consolidadas) y bajarlo a mano a `data/raw/manual/` |
+| OK a la fase 2g | Antes de seguir | La tabla de 14 clubes y las decisiones 48 a 51 |
+| Porto en error | Antes de las métricas | Dos cuadres del documento difieren en 2 por redondeo (ver fase 2g). Opciones: tolerancia 2 en sumas de muchas filas redondeadas, otra regla, o dejar Porto sin cifras |
 | Hooks y OCR fuera del Mac | Si se trabaja desde la VM Linux | El hook apunta al `.venv` del Mac y el binario de gitleaks es de macOS arm64: desde la VM, `git commit` fallaría. El OCR tampoco funciona fuera de macOS |
 
 El resto de comprobaciones de la fase 2 está en la sección 7.1 y en los riesgos de `plan.md`.
 
 ## Siguiente paso
 
-1. Al volver a Claude Code: leer este archivo, `git status` y `git log`. Desde `632ccc1`, Cowork solo ha cambiado `docs/estado.md` y `docs/fuentes-pendientes.md`, sin commit.
-2. Decidir las fuentes de Lazio y FC Porto (ver pendientes). Para Porto, bajar a mano el archivo elegido a `data/raw/manual/` y registrarlo con `register-manual`.
-3. Con los 14 clubes: conversión a EUR con los tipos del BCE (sección 5 del plan) y tabla consolidada.
+1. El usuario revisa la fase 2g, las decisiones 48 a 51 y qué hacer con los redondeos de Porto.
+2. Con los 14 clubes: conversión a EUR con los tipos del BCE (sección 5 del plan) y tabla consolidada.

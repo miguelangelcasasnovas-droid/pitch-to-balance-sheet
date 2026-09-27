@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Linkbase de cálculo sintético para los tests del lector de iXBRL. Sin datos reales. -->
+<link:linkbase xmlns:link="http://www.xbrl.org/2003/linkbase" xmlns:xlink="http://www.w3.org/1999/xlink">
+  <link:calculationLink xlink:type="extended" xlink:role="http://www.xbrl.org/2003/role/link">
+    <link:loc xlink:type="locator" xlink:label="resultado" xlink:href="ifrs-full.xsd#ifrs-full_ProfitLoss"/>
+    <link:loc xlink:type="locator" xlink:label="ingresos" xlink:href="ifrs-full.xsd#ifrs-full_Revenue"/>
+    <link:loc xlink:type="locator" xlink:label="personal" xlink:href="ifrs-full.xsd#ifrs-full_EmployeeBenefitsExpense"/>
+    <link:loc xlink:type="locator" xlink:label="otros" xlink:href="ifrs-full.xsd#ifrs-full_OtherExpenseByNature"/>
+    <link:loc xlink:type="locator" xlink:label="diferidos" xlink:href="ifrs-full.xsd#ifrs-full_DeferredTaxExpenseIncomeRecognisedInProfitOrLoss"/>
+    <link:calculationArc xlink:type="arc" xlink:arcrole="http://www.xbrl.org/2003/arcrole/summation-item" xlink:from="resultado" xlink:to="ingresos" weight="1.0"/>
+    <link:calculationArc xlink:type="arc" xlink:arcrole="http://www.xbrl.org/2003/arcrole/summation-item" xlink:from="resultado" xlink:to="personal" weight="-1.0"/>
+    <link:calculationArc xlink:type="arc" xlink:arcrole="http://www.xbrl.org/2003/arcrole/summation-item" xlink:from="resultado" xlink:to="otros" weight="-1.0"/>
+    <link:calculationArc xlink:type="arc" xlink:arcrole="http://www.xbrl.org/2003/arcrole/summation-item" xlink:from="resultado" xlink:to="diferidos" weight="1.0"/>
+  </link:calculationLink>
+</link:linkbase>
