@@ -1,6 +1,6 @@
 # Estado del proyecto
 
-Actualizado: 27/09/2026 (fase 2f)
+Actualizado: 27/09/2026 (fase 2f y fuentes de Lazio y FC Porto)
 
 ## Fase 0: cerrada
 
@@ -92,7 +92,7 @@ Hecha en Cowork. El detalle, con URLs, páginas, robots.txt y sha256, está en [
 
 - Si se usa el PDF del club, Man City no necesita OCR. Hay que descargarlo a mano a `data/raw/manual/`.
 - Liverpool sigue necesitando OCR, pero el PDF de su web es un render limpio y es mejor base que el escaneo de Companies House.
-- Lazio también es imagen. Antes de pasar sus 208 páginas por OCR, conviene buscar el ESEF.
+- Lazio también es imagen. Antes de pasar sus 208 páginas por OCR, conviene buscar el ESEF. Localizado el 27/09/2026: ver «Lazio y FC Porto: fuentes oficiales localizadas».
 
 ## Fase 2b: fuentes fijadas y piloto de OCR con Chelsea (cerrada)
 
@@ -346,6 +346,19 @@ Pedido por el usuario al cerrar la fase 2f. Las palabras clave del diagnóstico 
 - **Falso positivo:** la búsqueda es por subcadena, así que «personale» aparece en la pág. 27 del alemán, dentro de «Personalentscheidung». Es solo un diagnóstico: no afecta a la extracción.
 - **Tests:** 99, en verde.
 
+## Lazio y FC Porto: fuentes oficiales localizadas (27/09/2026)
+
+Hecho en Cowork, sin tocar `config/`, `src/` ni `data/` y sin extraer cifras. El detalle, con URLs, huellas y cómo se llegó a cada archivo, está en la sección 6 de [`fuentes-pendientes.md`](fuentes-pendientes.md).
+
+| Club | Documento | Formato | Tamaño | Texto | Cuentas | Descarga automática |
+| --- | --- | --- | --- | --- | --- | --- |
+| Lazio | "Relazione finanziaria annuale separata e consolidata al 30.06.2025", en 1info (07/10/2025) | ZIP ESEF, con el informe en XHTML e iXBRL | 2.306.292 bytes | Sí: 197 de 208 páginas (95%) | Separadas y consolidadas, en euros (no en miles). Las etiquetas iXBRL solo cubren las consolidadas | Sí: GET directo, sin token, y el robots.txt de 1info da 404 |
+| FC Porto | "Relatório Anual Integrado 2024/2025 - versão não ESEF", en la CMVM (01/10/2025) | PDF de 259 páginas, cada una con dos del informe | 52.410.765 bytes | Sí: 238 de 259 (92%), medido con pdf.js y no con pdfplumber. 10 páginas escaneadas: certificaciones legales e informe del Conselho Fiscal | Consolidadas (resultados en la pág. 117) e individuales (pág. 173), en miles de euros | No. robots.txt lo permite, pero el visor recibe el PDF por un `POST` de la aplicación: descarga manual |
+
+- **Lazio ya no necesita OCR** si se usa el ESEF. Borsa Italiana y CONSOB no se consultaron, porque el documento estaba en 1info, el almacenamiento autorizado.
+- **Porto también publica la versión ESEF** en la CMVM, que según la propia CMVM es la oficial y prevalece si difiere del PDF. Tampoco tiene URL: se baja con el botón "Download ZIP".
+- **Pendiente de medir con pdfplumber:** el PDF de Porto, cuando esté en `data/raw/manual/`.
+
 ## Decisiones
 
 1. **Carpeta de trabajo:** `~/football-club-finance`.
@@ -433,14 +446,14 @@ Tomadas en la fase 2f y aceptadas por el usuario el 27/09/2026:
 | Pendiente | Para cuándo | Detalle |
 | --- | --- | --- |
 | PDF manual de Arsenal | Opcional | Si el usuario lo deja en `data/raw/manual/arsenal_2024-25.pdf`, pasa a ser la fuente principal. Hay que añadirlo a `sources.yaml` con su URL y registrarlo |
-| ESEF de Lazio 2024/25 | Antes de decidir OCR para Lazio | El club dice que está en el portal 1info, pero la dirección que da devuelve 404 |
-| Informe anual 2024/25 completo de FC Porto | Fase 2 | La CMVM vuelve después del 27/09/2026 a las 18:00. Mientras tanto solo hay el comunicado de resultados, que no trae notas. fcporto.pt respondió 200 el 26/09/2026, pero no tiene enlaces en el HTML |
+| Fuente de Lazio 2024/25 | Antes de extraer Lazio | ESEF localizado en 1info el 27/09/2026, con texto y descarga directa. Falta decidir si pasa a ser la fuente y escribir su lector, porque es XHTML con iXBRL y no PDF |
+| Fuente de FC Porto 2024/25 | Antes de extraer Porto | Informe anual localizado en la CMVM el 27/09/2026, en PDF con texto y en ESEF. Ninguno tiene URL de descarga. Falta decidir cuál (con la decisión 40, las cuentas consolidadas) y bajarlo a mano a `data/raw/manual/` |
 | Hooks y OCR fuera del Mac | Si se trabaja desde la VM Linux | El hook apunta al `.venv` del Mac y el binario de gitleaks es de macOS arm64: desde la VM, `git commit` fallaría. El OCR tampoco funciona fuera de macOS |
 
 El resto de comprobaciones de la fase 2 está en la sección 7.1 y en los riesgos de `plan.md`.
 
 ## Siguiente paso
 
-1. Cowork trabaja en la carpeta desde el 27/09/2026, después del commit de `text-layer` multilingüe. Al volver a Claude Code: leer este archivo, `git status` y `git log`, y ver qué ha cambiado antes de tocar nada.
-2. Después del 27/09/2026 a las 18:00, volver a la CMVM para buscar el informe anual 2024/25 de FC Porto; y el ESEF de Lazio.
+1. Al volver a Claude Code: leer este archivo, `git status` y `git log`. Desde `632ccc1`, Cowork solo ha cambiado `docs/estado.md` y `docs/fuentes-pendientes.md`, sin commit.
+2. Decidir las fuentes de Lazio y FC Porto (ver pendientes). Para Porto, bajar a mano el archivo elegido a `data/raw/manual/` y registrarlo con `register-manual`.
 3. Con los 14 clubes: conversión a EUR con los tipos del BCE (sección 5 del plan) y tabla consolidada.

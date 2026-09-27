@@ -2,6 +2,8 @@
 
 Consultado el 26/09/2026, entre las 12:00 y las 12:25 UTC. No se ha extraído ninguna cifra ni se ha tocado `config/`, `src/` ni `data/`: los PDFs se descargaron a una carpeta temporal fuera del repo, solo para medirlos.
 
+**Añadido el 27/09/2026:** la sección 6, con el ESEF de Lazio en 1info y el informe anual de FC Porto en la CMVM. Tampoco se ha extraído ninguna cifra ni se ha tocado `config/`, `src/` ni `data/`.
+
 **Cómo se midió la capa de texto.** Con el criterio fijado en [`estado.md`](estado.md): caracteres no blancos por página con `pdfplumber`, página con texto a partir de 200, y PDF de texto (80% o más de páginas con texto), imagen (menos del 20%) o mixto. Se usó pdfplumber 0.11.9, no la 0.11.10 fijada en el proyecto. Para distinguir un escaneo de un PDF sin fuentes se usaron `pdffonts` y `pdfimages` (poppler). La cuenta de resultados de cada PDF se localizó mirando la página renderizada, y su número es la página del PDF empezando en 1.
 
 **robots.txt.** Se leyó el del dominio de la página y el del dominio que sirve el PDF, que casi nunca es el mismo. Si un robots.txt responde 4xx, no hay restricciones; si responde 5xx, hay que suponer que todo está prohibido ([RFC 9309](https://www.rfc-editor.org/rfc/rfc9309.txt), secciones 2.3.1.3 y 2.3.1.4).
@@ -9,8 +11,8 @@ Consultado el 26/09/2026, entre las 12:00 y las 12:25 UTC. No se ha extraído ni
 ## Resumen
 
 - **Ingleses:** 4 de 6 publican las cuentas 2024/25 en su web. Solo la de Manchester City tiene capa de texto. Liverpool, Tottenham y Newcastle suben un PDF sin texto, igual que el de Companies House. Arsenal y Chelsea no enlazan ningún PDF.
-- **Juventus y Celtic:** PDF con texto y URL fijada. **Lazio:** el PDF que publica es un escaneo; la versión oficial es la ESEF, que no se ha localizado.
-- **Porto:** la CMVM está en mantenimiento programado hasta el 27/09/2026 a las 18:00 y no se pudo comprobar. Hay una fuente parcial: el comunicado de resultados 2024/25, con texto.
+- **Juventus y Celtic:** PDF con texto y URL fijada. **Lazio:** el PDF que publica es un escaneo; la versión oficial es la ESEF, localizada el 27/09/2026 en 1info y con texto (sección 6.1).
+- **Porto:** el 26/09/2026 la CMVM estaba en mantenimiento. El 27/09/2026 ya respondía y el informe anual 2024/25 está allí, con texto y con cuentas consolidadas e individuales (sección 6.2). El comunicado de resultados queda como fuente parcial.
 
 ## 1. Clubes ingleses: cuentas 2024/25 en la web del club
 
@@ -42,7 +44,7 @@ Consultado el 26/09/2026, entre las 12:00 y las 12:25 UTC. No se ha extraído ni
 
 **Notas:**
 
-1. **Lazio:** el nombre del archivo dice "copia di cortesia". Según el [aviso del club](https://mediaverse.sslazio.hiway.media/VMFS1/FILES/public/upload/68e5706e/S.S.LAZIOS.p.A.-LinkreperibilitRelazioneFinanziariaAnnualeESEFal30.06.2025.pdf), la versión oficial en formato ESEF se depositó en el portal 1info. La dirección que da, `https://www.1info.it/PORTALE1INFO`, devuelve una página 404 y el archivo ESEF no se ha localizado. Merece la pena buscarlo antes de pasar 208 páginas por OCR: el ESEF es XHTML con etiquetas iXBRL, que se leen sin OCR.
+1. **Lazio:** el nombre del archivo dice "copia di cortesia". Según el [aviso del club](https://mediaverse.sslazio.hiway.media/VMFS1/FILES/public/upload/68e5706e/S.S.LAZIOS.p.A.-LinkreperibilitRelazioneFinanziariaAnnualeESEFal30.06.2025.pdf), la versión oficial en formato ESEF se depositó en el portal 1info. La dirección que da, `https://www.1info.it/PORTALE1INFO`, devuelve una página 404 y el archivo ESEF no se ha localizado. Merece la pena buscarlo antes de pasar 208 páginas por OCR: el ESEF es XHTML con etiquetas iXBRL, que se leen sin OCR. **Localizado el 27/09/2026 (sección 6.1).**
 2. **Juventus:** la lista fecha el informe el 10/11/2025, pero los metadatos de los dos PDFs dicen que se crearon el 17/02/2026. Probablemente se sustituyó el archivo sin cambiar la URL, así que el sha256 de la tabla de huellas es el que manda.
 
 ## 3. FC Porto: fuente alternativa
@@ -58,6 +60,7 @@ Consultado el 26/09/2026, entre las 12:00 y las 12:25 UTC. No se ha extraído ni
 
 1. **Cierre de Porto confirmado:** el comunicado compara la posición financiera a 30/06/2024 y a 30/06/2025 (pág. 7). Queda resuelto lo que el plan dejaba "por confirmar" en la sección 6.
 2. **fcporto.pt:** hoy `www.fcporto.pt/pt/clube/institucional` responde 200, cuando en la fase 0 dio 403. Es una aplicación JavaScript sin enlaces en el HTML, y su `/robots.txt` devuelve la propia página HTML, no un robots.txt.
+3. **27/09/2026:** la CMVM ya responde. El informe anual completo está en la sección 6.2.
 
 ## 4. Huellas de los archivos abiertos
 
@@ -82,6 +85,51 @@ Man City no está en la tabla porque no se pudo descargar con curl.
 | --- | --- |
 | Descargar a mano el PDF de Man City y medirlo con pdfplumber | Cloudflare bloquea la descarga automática aunque robots.txt la permite |
 | Arsenal y Chelsea | Sin PDF en su web: solo queda Companies House, es decir, OCR |
-| ESEF de Lazio 2024/25 | El PDF es un escaneo; la ESEF está en 1info según el club, pero no se ha localizado |
-| Porto: informe anual 2024/25 completo | La CMVM vuelve después del 27/09/2026 a las 18:00. Hasta entonces solo hay el comunicado |
+| ESEF de Lazio 2024/25 | Localizado el 27/09/2026 (sección 6.1). Falta decidir si pasa a ser la fuente y cómo se lee |
+| Porto: informe anual 2024/25 completo | Localizado el 27/09/2026 en la CMVM (sección 6.2). No tiene URL de descarga: hay que bajarlo a mano |
 | Fijar las URLs en `config/sources.yaml` | Fuera del alcance de esta tarea: `config/` no se ha tocado |
+
+## 6. Lazio y FC Porto: fuentes oficiales (27/09/2026)
+
+Consultado el 27/09/2026, entre las 12:20 y las 12:40 UTC, en Cowork. El ZIP de Lazio se descargó a una carpeta temporal fuera del repo, solo para abrirlo. El PDF de Porto no se descargó: se abrió en el visor de la CMVM y se midió desde el navegador.
+
+### 6.1 Lazio: ESEF 2024/25 en 1info
+
+| Qué | Resultado |
+| --- | --- |
+| Dónde está | Portal [1info](https://www.1info.it/PORTALE1INFO) (Computershare), que según su propia descripción es el sistema de almacenamiento de información regulada autorizado por CONSOB en 2014. Emisor "S.S. LAZIO", categoría 1.1 "Relazione finanziaria annuale e relazione di revisione annuale" |
+| Documento | "Relazione finanziaria annuale separata e consolidata al 30.06.2025", almacenado el 07/10/2025 a las 21:09 UTC, protocolo `159386_oneinfo`. El portal lo marca como balance ESEF oficial. Es el único ESEF de 2024/25; de 2023/24 hay dos, el segundo con ".1" en el título |
+| URL del ZIP | [PdfShow.aspx?…file=159386_oneinfo.zip](https://www.1info.it/PdfViewer/PdfShow.aspx?service=&type=documenti&year=2025&file=159386_oneinfo.zip&download=1): `https://www.1info.it/PdfViewer/PdfShow.aspx?service=&type=documenti&year=2025&file=159386_oneinfo.zip&download=1`. Responde 200 a un GET sin cookies ni token, con `content-disposition: attachment; filename="159386_oneinfo.zip"` |
+| Tamaño | 2.306.292 bytes, sha256 `e46d5439fd829201233ff19a084ff29086165a529de55131f6b75bd7664405cf`. Descomprimido: 8 archivos y 20.002.312 bytes |
+| Contenido | Paquete ESEF `81560036DCCA48CA0F08-2025-06-30-0-it`. El informe es `reports/81560036DCCA48CA0F08-2025-06-30-0-it.html` (11.960.562 bytes): XHTML con iXBRL, aunque la extensión es `.html` y no `.xhtml`. El resto es la taxonomía de la sociedad (`.xsd` y linkbases) y `META-INF` |
+| Texto | 208 páginas, las mismas que el PDF de cortesía. Con el umbral de 200 caracteres no blancos, 197 de 208 tienen texto (95%). Las 11 restantes tienen entre 39 y 192 caracteres |
+| Cuentas | Separadas desde la pág. 47 y consolidadas con la cuenta de resultados en la pág. 141, como en el PDF de cortesía. Las cifras van "in Euro", en unidades y no en miles |
+| Etiquetas iXBRL | 259 cifras (`ix:nonFraction`), todas en las págs. 138, 139, 141, 143 y 145: solo los estados consolidados. Las cuentas separadas son texto sin etiquetas. Entidad: LEI 81560036DCCA48CA0F08 |
+| robots.txt | `www.1info.it/robots.txt` responde 404: sin restricciones |
+
+**Cómo se llegó:**
+
+1. `https://www.1info.it/PORTALE1INFO`, que el 26/09/2026 llevaba a una página 404, hoy responde 200. Es una aplicación JavaScript: la lista de documentos sale de un `POST` a `/PORTALE1INFO/API/Documenti` con el filtro de emisor, sin autenticación.
+2. El botón de descarga abre `https://www.1info.it/PORTALE1INFO/Pdf/Pdf?pdf=159386_oneinfo.zip&data=2025&filetype=documenti&titolo=&download=1`, una página HTML de 1.475 bytes con un iframe que apunta a la URL del ZIP.
+3. El portal ofrece también una versión firmada (`.p7m`), que no se ha abierto.
+4. **Borsa Italiana y CONSOB no se han consultado:** 1info es el almacenamiento autorizado y el documento estaba allí.
+
+**Qué cambia:** con el ESEF, Lazio no necesita OCR. Pero el pipeline solo lee PDFs, así que habría que escribir un lector de XHTML (texto de las cuentas separadas) e iXBRL (etiquetas de las consolidadas).
+
+### 6.2 FC Porto: Relatório Anual Integrado 2024/2025 en la CMVM
+
+| Qué | Resultado |
+| --- | --- |
+| Estado de la CMVM | Fuera de mantenimiento: `www.cmvm.pt` responde 200 |
+| Cómo se llega | Sistema de Difusão de Informação → Emitentes → Informação periódica → Relatório e contas → Anuais, con el filtro Entidade "Futebol Clube do Porto - Futebol, SAD" |
+| Publicaciones de 2024/25 | Dos, el 01/10/2025: "Relatório Anual Integrado 2024/2025 - versão não ESEF" a las 07:53 y "… - versão ESEF" a las 08:27, según la hora que muestra la CMVM |
+| URL del PDF | [PdfViewerInfPriv?Input=EBA43BC8…](https://www.cmvm.pt/PInstitucional/PdfViewerInfPriv?Input=EBA43BC8F4EB22A844F75CC1AC19DCE1954A814A216A036952C6F2AD11B1DA92): `https://www.cmvm.pt/PInstitucional/PdfViewerInfPriv?Input=EBA43BC8F4EB22A844F75CC1AC19DCE1954A814A216A036952C6F2AD11B1DA92`. Es la página del visor, no el archivo. Se abrió también entrando directamente por ella |
+| Tamaño y huella | 52.410.765 bytes, sha256 `c4c675ff54a89b0a37c77c6ca52d7e3d8b0f7a8d86ef0dedcc28842b72cda675`, calculados en el navegador sobre los bytes que carga el visor. Creado el 29/09/2025 con Adobe InDesign 20.1 |
+| Páginas | 259. Cada página del PDF son dos del informe: la 117 lleva las 232 y 233 impresas, como en Celtic |
+| Capa de texto | **Medida con pdf.js en el navegador, no con pdfplumber:** 238 de 259 páginas con 200 caracteres o más (92%), es decir, texto. Por debajo quedan la portada (1), la última (259), 9 páginas con una sola imagen y poco texto (25, 33, 43, 115, 166, 171, 218, 222 y 226, varias de ellas portadas de sección) y 10 escaneadas, con imágenes y solo el número de página como texto: 167 a 170 (certificación legal de las cuentas consolidadas), 219 a 221 (la de las individuales) y 223 a 225 (informe y dictamen del Conselho Fiscal) |
+| Consolidadas e individuales | **Las dos.** "B. Demonstrações Financeiras Consolidadas e Anexos" desde la pág. 115, con la posición financiera en la 116 y los resultados por naturalezas en la 117. "C. Demonstrações Financeiras Individuais e Anexos" desde la 171, con la posición en la 172 y los resultados en la 173. Todas en miles de euros y con la columna 30.06.2024 antes que la 30.06.2025 |
+| robots.txt | `www.cmvm.pt/robots.txt`: para `User-agent: *` solo bloquea `/PInstitucional/css/extra.css`. El visor está permitido |
+| Descarga automática | **No hay URL del archivo.** El visor recibe el PDF en la respuesta de un `POST` a `/PInstitucional/screenservices/PInstitucional/ServiceAPIStatic_Portal2` (la CMVM es una aplicación OutSystems) y lo muestra como `blob:`. Reproducir esa llamada es el mismo caso que Dortmund, así que la vía limpia es la descarga manual desde el visor a `data/raw/manual/` |
+| Versión ESEF | [EsefViewer?Input=99BC9C61…](https://www.cmvm.pt/PInstitucional/EsefViewer?Input=99BC9C615DC912777714BCA1822FC54BAC0DA3E65E65E769706697BB0AA377DD): `https://www.cmvm.pt/PInstitucional/EsefViewer?Input=99BC9C615DC912777714BCA1822FC54BAC0DA3E65E65E769706697BB0AA377DD`. Muestra el informe completo, con 422 cifras etiquetadas (`ix:nonFraction`) y la entidad LEI 549300H3W4IIDNIV6I38. El ZIP se baja con el botón "Download ZIP", que llama al servidor y no tiene URL; su tamaño está sin medir. La CMVM avisa en esa sección de que la versión ESEF es la oficial y prevalece sobre el PDF si difieren |
+
+**Qué cambia:** Porto tiene cuentas completas, con notas y con texto, en dos formatos, y los dos se bajan a mano. La capa de texto del PDF hay que volver a medirla con pdfplumber cuando esté en `data/raw/manual/`.
