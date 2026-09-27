@@ -104,14 +104,15 @@ def test_clubs_yaml_tiene_los_seis_ingleses_y_seis_cotizados():
     assert all(club.fiscal_year_end in ("05-31", "06-30") for club in clubs)
 
 
-def test_sources_yaml_tiene_las_fuentes_de_la_fase_2d():
+def test_sources_yaml_tiene_las_fuentes_de_las_fases_2d_y_2e():
     sources = load_sources("2024/25")
-    expected = {
-        "manchester_united": "web/manchester_united_20-f_2026.pdf",
-        "borussia_dortmund": "web/borussia_dortmund_2024-25_en.pdf",
-        "ajax": "web/ajax_2024-25.pdf",
-        "benfica": "web/benfica_2024-25.pdf",
-    }
-    for club_id, file in expected.items():
+    for club_id, file in {"ajax": "web/ajax_2024-25.pdf",
+                          "benfica": "web/benfica_2024-25.pdf"}.items():
         assert (sources[club_id].primary.kind, sources[club_id].primary.file) == ("url", file)
-    assert sources["manchester_united"].primary.url.endswith("2026-mu-plc-form-20-f.pdf")
+    united = sources["manchester_united"]
+    assert united.primary.url.endswith("2025-mu-plc-form-20-f.pdf")
+    assert [c.url.rsplit("/", 1)[-1] for c in united.controls] == ["2026-mu-plc-form-20-f.pdf"]
+    dortmund = sources["borussia_dortmund"]
+    assert (dortmund.primary.kind, dortmund.primary.file) == (
+        "manual", "manual/borussia_dortmund_2024-25_de.pdf")
+    assert [c.file for c in dortmund.controls] == ["web/borussia_dortmund_2024-25_en.pdf"]

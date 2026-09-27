@@ -81,6 +81,16 @@ def test_filas_y_columnas_desde_las_observaciones():
     assert wages.amounts[1].fixes == ("espacio dentro de la cifra",)
 
 
+def test_puntos_de_relleno_fuera_del_rotulo():
+    observations = [obs("£'000", 1500, 1610, 100),
+                    obs("Revenue ........................ 4", 200, 1100, 200),
+                    obs("666,514", 1500, 1610, 200)]
+    [table] = read_tables(group_rows(observations))
+    [row] = table.rows
+    assert (row.label, row.raw_label, row.note) == ("revenue", "Revenue", "4")
+    assert row.amounts[0].value == 666514
+
+
 def test_dos_cifras_en_la_misma_columna_marcan_la_fila_sin_romper_la_tabla():
     observations = [obs("£'000", 1500, 1610, 100), obs("Consideration", 200, 480, 200),
                     obs("66,781", 1400, 1530, 200), obs("92,037", 1480, 1610, 200)]

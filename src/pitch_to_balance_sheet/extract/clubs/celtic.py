@@ -3,13 +3,16 @@
 Texto directo con pdfplumber, sin OCR. Cada página del PDF son dos del informe, así que cada
 tabla se lee en su mitad. Páginas localizadas buscando los títulos en el texto:
 - pág. 26, mitad izquierda: Consolidated statement of comprehensive income, 2025 y 2024 en £000.
-- pág. 33, mitad izquierda: nota 9, Staff particulars, tabla del grupo (Group), en £000.
+- pág. 33, mitad izquierda: nota 9, Staff particulars, tabla del grupo (Group), en £000; y nota
+  8, Exceptional operating (expenses)/income, con los acuerdos por rescisión de contratos de
+  trabajo (staff_costs_exceptional). Su total tiene que coincidir con la línea de la cuenta.
 """
 
 from pitch_to_balance_sheet.extract.statements import (
     ClubSpec,
     DocumentSpec,
     FigureSpec,
+    Link,
     Sum,
     TableSpec,
 )
@@ -32,6 +35,16 @@ PNL_ROWS = {
     "tax": r"^tax expense$",
     "net_result": r"^profit and total comprehensive profit for the year$",
 }
+EXCEPTIONAL_ROWS = {
+    "impairment": r"^impairment of intangible assets and other prepaid costs$",
+    "player_salaries_compensation": r"^compensation for player salaries$",
+    "contract_termination": r"^settlement agreements on unforeseen contract termination$",
+}
+EXCEPTIONAL_NOTE = (
+    "Settlement agreements on unforeseen contract termination (nota 8): costes por rescindir "
+    "contratos de trabajo, que el club presenta como partida excepcional. La nota no dice si "
+    "están también en los gastos de personal de la nota 9."
+)
 STAFF_ROWS = {
     "wages_and_salaries": r"^wages and salaries$",
     "social_security_costs": r"^social security costs$",
@@ -66,17 +79,27 @@ SPEC = ClubSpec(
                 ),
             ),
             TableSpec(
+                "exceptional", 33, COLUMNS, EXCEPTIONAL_ROWS, region=LEFT_HALF,
+                select=r"^settlement agreements",
+                totals_after={"exceptional_total": "contract_termination"},
+                sums=(Sum("exceptional_total", tuple(EXCEPTIONAL_ROWS)),),
+            ),
+            TableSpec(
                 "staff", 33, COLUMNS, STAFF_ROWS, region=LEFT_HALF,
                 header_label=r"^group$",
                 totals_after={"staff_costs_total": "other_pension_costs"},
                 sums=(Sum("staff_costs_total", tuple(STAFF_ROWS)),),
             ),
         ),
+        links=tuple(Link(("exceptional", "exceptional_total", year),
+                         ("pnl", "exceptional_items", year)) for year in COLUMNS),
         figures=(
             FigureSpec("revenue_total_reported", (("pnl", "revenue"),), "2025"),
             FigureSpec("revenue_ex_player_trading", (("pnl", "revenue"),), "2025",
                        note=REVENUE_EX_NOTE),
             FigureSpec("staff_costs", (("staff", "staff_costs_total"),), "2025"),
+            FigureSpec("staff_costs_exceptional", (("exceptional", "contract_termination"),),
+                       "2025", note=EXCEPTIONAL_NOTE, negate=True),
             FigureSpec("net_result", (("pnl", "net_result"),), "2025"),
         ),
     ),

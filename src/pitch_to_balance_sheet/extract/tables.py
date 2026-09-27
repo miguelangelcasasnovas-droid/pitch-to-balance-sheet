@@ -163,6 +163,7 @@ def normalize_label(text: str) -> str:
     text = unicodedata.normalize("NFKD", text)
     text = "".join(c for c in text if not unicodedata.combining(c)).lower()
     text = re.sub(r"[’'‘`´]", "", text)
+    text = re.sub(r"\.{2,}", " ", text)  # puntos de relleno: "Revenue ........ 4 666,514"
     text = re.sub(r"[^a-z0-9()/&,\-. ]", " ", text)
     return " ".join(text.split())
 
@@ -257,6 +258,6 @@ def _table_row(row: Row, column_x2: tuple[float, ...], thousands: str) -> TableR
     # Referencia a una nota al final del rótulo: "3", "4,5" o "(31)".
     if label_tokens and re.fullmatch(r"\d{1,2}(,\d{1,2})?|\(\d{1,2}\)", label_tokens[-1]):
         note = label_tokens.pop()
-    raw_label = " ".join(label_tokens)
+    raw_label = " ".join(re.sub(r"\.{2,}", " ", " ".join(label_tokens)).split())
     return TableRow(normalize_label(raw_label), raw_label, note,
                     {} if conflict else dict(sorted(amounts.items())), row, conflict)

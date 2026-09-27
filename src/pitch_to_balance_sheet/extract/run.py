@@ -29,7 +29,34 @@ from pitch_to_balance_sheet.extract.statements import (
 from pitch_to_balance_sheet.sources.local import document_file
 
 SOURCE_NAMES = {"companies_house": "Companies House", "manual": "PDF manual", "url": "web del club"}
-CONCEPTS = ("revenue_total_reported", "revenue_ex_player_trading", "staff_costs", "net_result")
+CONCEPTS = ("revenue_total_reported", "revenue_ex_player_trading", "staff_costs",
+            "staff_costs_exceptional", "net_result")
+RESTATEMENT_THRESHOLD_PCT = 1.0  # sección 5 del plan
+
+
+@dataclass(frozen=True)
+class Restatement:
+    """Una cifra frente a la del informe del año siguiente (control de reexpresión)."""
+
+    document: str
+    concept: str
+    page: int
+    primary: int
+    control: int
+
+    @property
+    def difference(self) -> int:
+        return self.control - self.primary
+
+    @property
+    def pct(self) -> float:
+        if self.primary == 0:
+            return 0.0 if self.control == 0 else float("inf")
+        return abs(self.difference) / abs(self.primary) * 100
+
+    @property
+    def restated(self) -> bool:
+        return self.pct > RESTATEMENT_THRESHOLD_PCT
 
 
 @dataclass
@@ -44,6 +71,8 @@ class ClubResult:
     corrections: list[str] = field(default_factory=list)
     summary: dict[str, int] = field(default_factory=dict)
     crops: dict[str, str] = field(default_factory=dict)
+    restatements: list[Restatement] = field(default_factory=list)
+    controls: list[str] = field(default_factory=list)  # resumen de cada control, para la tabla
     error: str | None = None
 
     @property
@@ -99,9 +128,21 @@ def extract_club(season: str, spec: ClubSpec, reocr: bool = False) -> ClubResult
                 twin = twins.get(figure.concept)
                 if twin is None:
                     raise ExtractionError(f"el {name} no tiene {figure.concept}")
-                result.checks.append(Check(
-                    name, twin.page, f"{figure.concept}: principal = control", figure.column,
-                    figure.value, twin.value))
+                if control.control_kind == "restatement":
+                    result.restatements.append(Restatement(name, figure.concept, twin.page,
+                                                           figure.value, twin.value))
+                else:
+                    result.checks.append(Check(
+                        name, twin.page, f"{figure.concept}: principal = control",
+                        figure.column, figure.value, twin.value))
+            if control.control_kind == "restatement":
+                marked = [r for r in result.restatements if r.document == name and r.restated]
+                result.controls.append(
+                    f"{name}: reexpresión en " + ", ".join(
+                        f"{r.concept} ({r.pct:.1f}%)" for r in marked)
+                    if marked else f"{name}: sin reexpresión (>{RESTATEMENT_THRESHOLD_PCT:g}%)")
+            else:
+                result.controls.append(f"{name}: cifras idénticas")
     except (manifest.ManifestError, ExtractionError, ocr.OcrError) as exc:
         result.error = str(exc)
         return result
@@ -153,9 +194,16 @@ def write_outputs(season: str, results: list[ClubResult]) -> list[str]:
                            "column": check.column, "reported": check.reported,
                            "computed": check.computed, "difference": check.difference,
                            "ok": check.ok})
+    restatements = [
+        {"club_id": result.club_id, "document": r.document, "concept": r.concept,
+         "page": r.page, "primary": r.primary, "control": r.control,
+         "difference": r.difference, "pct": round(r.pct, 3), "restated": r.restated}
+        for result in results for r in result.restatements
+    ]
     written = []
     done = {result.club_id for result in results}
-    for name, rows in (("cifras", figures), ("cuadres", checks)):
+    for name, rows in (("cifras", figures), ("cuadres", checks),
+                       ("reexpresiones", restatements)):
         path = INTERIM_DIR / f"{name}_{season_slug(season)}.csv"
         # Las filas de los clubes que no se han vuelto a extraer se conservan.
         if path.exists():
@@ -189,9 +237,9 @@ def table(results: list[ClubResult]) -> str:
     """Tabla final. Un * marca las cifras derivadas (is_derived)."""
     names = {club.club_id: club.name for club in load_clubs()}
     lines = ["| Club | Fuente | Ingresos publicados | Ingresos sin traspasos | "
-             "Gastos de personal | Resultado neto | Moneda | Unidad | Páginas | Cuadres | "
-             "Notas de OCR |",
-             "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |"]
+             "Gastos de personal | Personal excepcional | Resultado neto | Moneda | Unidad | "
+             "Páginas | Cuadres | Controles | Notas de OCR |",
+             "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |"]
     for result in results:
         by_concept = {figure.concept: figure for figure in result.figures}
         ok = not result.error
@@ -206,5 +254,6 @@ def table(results: list[ClubResult]) -> str:
         lines.append(f"| {names.get(result.club_id, result.club_id)} | {result.source or '—'} | "
                      + " | ".join(values)
                      + f" | {result.spec.currency} | {result.spec.unit} | {pages} | {checks} | "
+                     f"{'; '.join(result.controls) or '—'} | "
                      f"{summary_note(result) if ok else 'error: ' + result.error} |")
     return "\n".join(lines)

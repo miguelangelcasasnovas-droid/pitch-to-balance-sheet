@@ -62,17 +62,32 @@
       url: https://cdn.celticfc.com/assets/Celtic_plc_Annual_Report_2025.pdf
       file: web/celtic_2024-25.pdf
   manchester_united:
+    # Decisión del usuario del 27/09/2026: el 20-F del ejercicio 2024/25 es la fuente, y el de
+    # 2025/26 es el control de reexpresión (sección 5 del plan: se marca si difiere más de un 1%).
     primary:
       kind: url
-      url: https://ir.manutd.com/~/media/Files/M/Manutd-IR/documents/2026-mu-plc-form-20-f.pdf
-      file: web/manchester_united_20-f_2026.pdf
-      note: Form 20-F 2026, en texto. Cotiza en USD e informa en GBP.
+      url: https://ir.manutd.com/~/media/Files/M/Manutd-IR/documents/2025-mu-plc-form-20-f.pdf
+      file: web/manchester_united_20-f_2025.pdf
+      note: Form 20-F del ejercicio 2024/25, enlazado en ir.manutd.com/financial-information/annual-reports/2025.aspx. Cotiza en USD e informa en GBP.
+    controls:
+      - kind: url
+        url: https://ir.manutd.com/~/media/Files/M/Manutd-IR/documents/2026-mu-plc-form-20-f.pdf
+        file: web/manchester_united_20-f_2026.pdf
+        note: Form 20-F del ejercicio 2025/26; su columna 2025 es el control de reexpresión.
   borussia_dortmund:
+    # Decisión del usuario del 27/09/2026: el informe en alemán (vinculante) es la fuente y el
+    # inglés, el control. El PDF alemán no tiene URL pública localizable: la página de informes
+    # carga la lista desde una API con token. Hay que descargarlo a mano.
     primary:
-      kind: url
-      url: https://aktie.bvb.de/media/document/9eb897d3-91ac-48fa-a7b7-f0ed7eba1aff/assets/DE0005493092-JA-2024-EQ-E-00.pdf?disposition=inline
-      file: web/borussia_dortmund_2024-25_en.pdf
-      note: Informe anual 2024/25 en inglés; hay que usar las cuentas IFRS de grupo, no las HGB.
+      kind: manual
+      file: manual/borussia_dortmund_2024-25_de.pdf
+      url: https://aktie.bvb.de/publikationen/geschaftsberichte
+      note: Geschäftsbericht 2024/2025 en alemán, descargado a mano de la página de informes del club.
+    controls:
+      - kind: url
+        url: https://aktie.bvb.de/media/document/9eb897d3-91ac-48fa-a7b7-f0ed7eba1aff/assets/DE0005493092-JA-2024-EQ-E-00.pdf?disposition=inline
+        file: web/borussia_dortmund_2024-25_en.pdf
+        note: Informe anual 2024/25 en inglés; cuentas IFRS de grupo, no las HGB.
   ajax:
     primary:
       kind: url

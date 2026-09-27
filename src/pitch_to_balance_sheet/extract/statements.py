@@ -122,6 +122,12 @@ class DocumentSpec:
     thousands: str = ","
     links: tuple[Link, ...] = ()
     control_index: int | None = None  # None: fuente principal; n: controls[n] de sources.yaml
+    # "identical": el mismo documento en otra versión (traducción, otro depósito); sus cifras
+    # tienen que coincidir. "restatement": el informe del año siguiente; se marca reexpresión si
+    # una cifra difiere más de un 1% (sección 5 del plan), sin que sea un error.
+    control_kind: str = "identical"
+    # Si la especificación todavía no se puede escribir (p. ej. falta el PDF), el motivo.
+    pending: str | None = None
 
 
 @dataclass(frozen=True)
@@ -369,6 +375,8 @@ def _page(method: str, pdf_path: Path, sha256: str, page: int, interim: Path, re
 
 def read_document(name: str, spec: DocumentSpec, pdf_path: Path, sha256: str,
                   interim: Path, reocr: bool = False) -> DocumentResult:
+    if spec.pending:
+        raise ExtractionError(spec.pending)
     loaded: dict[str, LoadedTable] = {}
     for table_spec in spec.tables:
         page = table_spec.page

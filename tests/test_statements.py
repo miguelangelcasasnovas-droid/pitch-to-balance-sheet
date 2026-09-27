@@ -199,9 +199,37 @@ def test_la_segunda_lectura_de_una_celda_solo_pasa_vision_con_reocr(tmp_path, mo
 def test_las_especificaciones_de_los_clubes_se_cargan():
     from pitch_to_balance_sheet.extract.clubs import SPECS
 
-    assert {"arsenal", "celtic", "chelsea", "juventus", "liverpool", "manchester_city",
-            "newcastle", "tottenham"} <= set(SPECS)
+    assert len(SPECS) == 12
+    required = ["revenue_total_reported", "revenue_ex_player_trading", "staff_costs",
+                "net_result"]
     for club_spec in SPECS.values():
-        concepts = [f.concept for f in club_spec.primary.figures]
-        assert concepts == ["revenue_total_reported", "revenue_ex_player_trading",
-                            "staff_costs", "net_result"], club_spec.club_id
+        for document in (club_spec.primary, *club_spec.controls):
+            if document.pending:
+                continue
+            concepts = [f.concept for f in document.figures if f.concept in required]
+            assert concepts == required, club_spec.club_id
+    exceptional = {club_id for club_id, club_spec in SPECS.items()
+                   if any(f.concept == "staff_costs_exceptional"
+                          for f in club_spec.primary.figures)}
+    assert exceptional == {"manchester_united", "celtic"}
+    assert SPECS["borussia_dortmund"].primary.pending
+    assert SPECS["manchester_united"].controls[0].control_kind == "restatement"
+
+
+def test_una_especificacion_pendiente_es_error_con_su_motivo(tmp_path):
+    pending = DocumentSpec(method="text", tables=(), figures=(), unit_evidence="",
+                           pending="falta el PDF alemán")
+    with pytest.raises(ExtractionError, match="falta el PDF alemán"):
+        read_document("principal", pending, TABLE, "fixture", tmp_path)
+
+
+@pytest.mark.parametrize(
+    ("primary", "control", "restated"),
+    [(1000, 1000, False), (1000, 1010, False), (1000, 1011, True), (-500, -490, True),
+     (0, 0, False)],
+)
+def test_reexpresion_si_la_cifra_del_ano_siguiente_difiere_mas_de_un_1_por_ciento(
+        primary, control, restated):
+    from pitch_to_balance_sheet.extract.run import Restatement
+
+    assert Restatement("control", "x", 1, primary, control).restated is restated

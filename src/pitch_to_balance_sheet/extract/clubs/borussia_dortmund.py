@@ -1,4 +1,10 @@
-"""Borussia Dortmund GmbH & Co. KGaA, 2024/25: informe anual en inglés, cuentas IFRS de grupo.
+"""Borussia Dortmund GmbH & Co. KGaA, 2024/25: cuentas IFRS de grupo.
+
+Decisión del usuario del 27/09/2026: el Geschäftsbericht en alemán (vinculante) es la fuente y
+el informe en inglés, el control; las cifras tienen que coincidir. El PDF alemán no tiene URL
+pública localizable (la página de informes lo carga desde una API con token): hay que
+descargarlo a mano. Hasta entonces el club queda en error. Lo de abajo describe la versión
+inglesa, que es el control.
 
 El informe trae las cuentas consolidadas IFRS del grupo (desde la pág. 124) y las individuales
 HGB de la KGaA (desde la pág. 198); se usan las IFRS de grupo. Texto directo con pdfplumber.
@@ -47,15 +53,23 @@ REVENUE_EX_NOTE = (
     "en net transfer income (nota 17): no hay traspasos ni cesiones en los ingresos."
 )
 
+GERMAN_PENDING = (
+    "falta la especificación del Geschäftsbericht en alemán: se escribe (páginas y rótulos en "
+    "alemán) cuando el PDF esté en data/raw/manual/borussia_dortmund_2024-25_de.pdf"
+)
+
 SPEC = ClubSpec(
     club_id="borussia_dortmund",
     currency="EUR",
     unit="thousands",
     multiplier=1000,
-    unit_basis="«EUR '000» en las págs. 126 y 161, en el texto del PDF.",
-    primary=DocumentSpec(
+    unit_basis="«EUR '000» en las págs. 126 y 161 del informe en inglés, en el texto del PDF.",
+    primary=DocumentSpec(method="text", tables=(), figures=(), unit_evidence="",
+                         pending=GERMAN_PENDING),
+    controls=(DocumentSpec(
         method="text",
         unit_evidence=r"EUR '000",
+        control_index=0,
         tables=(
             TableSpec(
                 "pnl", 126, YEARS, PNL_ROWS, header=HEADER,
@@ -85,5 +99,5 @@ SPEC = ClubSpec(
             FigureSpec("staff_costs", (("staff", "staff_costs_total"),), "2025"),
             FigureSpec("net_result", (("pnl", "net_result"),), "2025"),
         ),
-    ),
+    ),),
 )

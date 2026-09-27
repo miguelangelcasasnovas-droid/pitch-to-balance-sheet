@@ -252,14 +252,22 @@ def extract(season: str, club_id: str | None, reocr: bool = False) -> int:
             if figure.note:
                 print(f"    nota: {figure.note}")
         passed = sum(check.ok for check in result.checks)
-        print(f"  cuadres: {passed} de {len(result.checks)} OK")
+        if result.checks or not result.error:
+            print(f"  cuadres: {passed} de {len(result.checks)} OK")
+        else:
+            print("  cuadres: no se han hecho (el club está en error)")
         for check in result.failed:
             print(f"  FALLA {check.document} pág. {check.page} [{check.column}] {check.relation}: "
                   f"{check.reported:,} frente a {check.computed:,} "
                   f"(diferencia {check.difference:,})")
+        for restatement in result.restatements:
+            print(f"  {'REEXPRESIÓN' if restatement.restated else 'reexpresión no'} "
+                  f"{restatement.document} {restatement.concept}: {restatement.primary:,} frente "
+                  f"a {restatement.control:,} ({restatement.pct:.2f}%)")
         for note in result.corrections:
             print(f"  corrección: {note}")
         if result.error:
+            sys.stdout.flush()  # que el error no caiga en mitad de la salida del club
             print(f"error: {spec.club_id}: {result.error}", file=sys.stderr)
     written = run.write_outputs(season, results)
     print("\n" + run.table(results))
