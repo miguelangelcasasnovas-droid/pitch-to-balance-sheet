@@ -224,6 +224,16 @@ Cinco métricas por club y temporada, y una valoración por EV/ingresos que da u
 - **Las métricas usan `revenue_ex_player_trading`.**
 - Cualquier cifra que se obtiene sumando o restando celdas publicadas también va marcada `is_derived=true`, con sus componentes. Por ejemplo, los gastos de personal de Juventus son la suma de los totales de las notas 40 y 41.
 
+**Regla de personal, decidida el 27/09/2026:**
+
+- `staff_costs`: el total de gastos de personal que publica el club. **Es el que usan las métricas.**
+- `staff_costs_exceptional`: solo las indemnizaciones o rescisiones que el propio club clasifica como excepcionales, por ejemplo la nota 7.1 de Manchester United.
+- `staff_severance_disclosed`: indemnizaciones que el club informa sin clasificarlas como excepcionales. Es un concepto informativo.
+- Las dos llevan la columna `included_in_staff_costs`:
+  - `true` o `false`, según estén dentro o fuera de `staff_costs`;
+  - `dudoso` si las cuentas no lo dicen.
+- Ninguna de las dos ajusta ninguna métrica.
+
 | Métrica | Definición | Si falta un dato |
 | --- | --- | --- |
 | Mix de ingresos | matchday, broadcasting y commercial sobre ingresos totales. Premios UEFA en broadcasting | Hueco si el club no desglosa |

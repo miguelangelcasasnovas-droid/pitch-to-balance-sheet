@@ -99,7 +99,7 @@ def document(report_year: int, control_index: int | None) -> DocumentSpec:
             FigureSpec("staff_costs", (("staff", "staff_costs_total"),), "2025",
                        note=STAFF_NOTE, negate=True),
             FigureSpec("staff_costs_exceptional", (("staff", "termination_benefits"),), "2025",
-                       note=EXCEPTIONAL_NOTE, negate=True),
+                       note=EXCEPTIONAL_NOTE, negate=True, included_in_staff_costs="true"),
             FigureSpec("net_result", (("pnl", "net_result"),), "2025"),
         ),
     )

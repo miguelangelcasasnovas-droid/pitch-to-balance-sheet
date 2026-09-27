@@ -17,11 +17,13 @@ from pitch_to_balance_sheet.extract.statements import (
     FigureSpec,
     Link,
     Part,
+    SentenceFigureSpec,
     Sum,
     TableSpec,
     read_document,
+    sentence_amount,
 )
-from pitch_to_balance_sheet.extract.tables import THOUSANDS_EVIDENCE, Observation
+from pitch_to_balance_sheet.extract.tables import THOUSANDS_EVIDENCE, Observation, Row
 
 TABLE = Path(__file__).parent / "fixtures" / "tabla_texto.pdf"
 ROWS = {
@@ -208,12 +210,71 @@ def test_las_especificaciones_de_los_clubes_se_cargan():
                 continue
             concepts = [f.concept for f in document.figures if f.concept in required]
             assert concepts == required, club_spec.club_id
-    exceptional = {club_id for club_id, club_spec in SPECS.items()
-                   if any(f.concept == "staff_costs_exceptional"
-                          for f in club_spec.primary.figures)}
-    assert exceptional == {"manchester_united", "celtic"}
-    assert SPECS["borussia_dortmund"].primary.pending
+
+    def included(concept):
+        return {club_id: figure.included_in_staff_costs
+                for club_id, club_spec in SPECS.items()
+                for figure in (*club_spec.primary.figures, *club_spec.primary.sentences)
+                if figure.concept == concept}
+
+    assert included("staff_costs_exceptional") == {"manchester_united": "true",
+                                                    "celtic": "dudoso"}
+    assert included("staff_severance_disclosed") == {"tottenham": "false", "benfica": "true",
+                                                      "juventus": "true"}
+    assert not any(d.pending for s in SPECS.values() for d in (s.primary, *s.controls))
+    assert SPECS["borussia_dortmund"].primary.thousands == "."
+    assert SPECS["borussia_dortmund"].controls[0].control_kind == "identical"
     assert SPECS["manchester_united"].controls[0].control_kind == "restatement"
+
+
+def test_included_in_staff_costs_solo_admite_true_false_o_dudoso():
+    with pytest.raises(ValueError, match="included_in_staff_costs"):
+        FigureSpec("staff_severance_disclosed", (("t", "r"),), "2025",
+                   included_in_staff_costs="sí")
+
+
+def _sentence_rows(text):
+    return [Row([Observation("Salaries and bonuses 222,816", 1.0, (0, 0, 900, 30))]),
+            Row([Observation(text, 1.0, (0, 100, 1800, 130))])]
+
+
+def _sentence(**changes):
+    fields = {"concept": "staff_severance_disclosed", "page": 35, "label": "redundancy costs",
+              "pattern": r"redundancy costs of (?P<amount>\S+) \(?2024: ?£?86,000\)",
+              "column": "2025", "scale": 1000, "included_in_staff_costs": "false"}
+    return SentenceFigureSpec(**(fields | changes))
+
+
+def test_cifra_de_una_frase_en_libras_pasa_a_miles():
+    rows = _sentence_rows("redundancy costs of £153,000 (2024: £86,000) were also charged")
+    amount, row = sentence_amount(rows, _sentence(), ",")
+    assert (amount.value, amount.raw, amount.fixes) == (153, "£153,000", ())
+    assert row is rows[1]
+
+
+def test_si_el_ocr_lee_mal_la_frase_es_error_salvo_con_lectura_en_la_imagen():
+    rows = _sentence_rows("payrol costs, redundancy costs of €153,00 2024: 86,000) were also")
+    with pytest.raises(ExtractionError, match="leerlo en la imagen"):
+        sentence_amount(rows, _sentence(), ",")
+    amount, _ = sentence_amount(rows, _sentence(image_reading="£153,000"), ",")
+    assert amount.value == 153 and amount.raw == "€153,00"
+    assert "leída en la imagen (£153,000) porque el OCR falló" in amount.fixes[0]
+
+
+def test_la_lectura_en_la_imagen_sobra_si_el_ocr_ya_lee_la_cifra():
+    rows = _sentence_rows("redundancy costs of £153,000 (2024: £86,000) were also charged")
+    with pytest.raises(ExtractionError, match="sobra image_reading"):
+        sentence_amount(rows, _sentence(image_reading="£153,000"), ",")
+
+
+@pytest.mark.parametrize(
+    ("text", "error"),
+    [("redundancy costs of £153,500 (2024: £86,000)", "múltiplo exacto"),
+     ("redundancy costs of £153,000 (2023: £86,000)", "aparece 0 veces")],
+)
+def test_frase_que_no_cuadra_con_la_escala_o_que_no_aparece_es_error(text, error):
+    with pytest.raises(ExtractionError, match=error):
+        sentence_amount(_sentence_rows(text), _sentence(), ",")
 
 
 def test_una_especificacion_pendiente_es_error_con_su_motivo(tmp_path):

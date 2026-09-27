@@ -5,7 +5,10 @@ la página renderizada:
 - pág. 23, Consolidated income statement: seis columnas en £'000 (operaciones sin football
   trading, football trading y total, de 2025 y de 2024). De "Finance income" hacia abajo solo
   hay cifras en las columnas de total: esas filas se cuadran solo ahí.
-- pág. 35, nota 5, Staff numbers and costs (continued), 2025 y 2024 en £'000.
+- pág. 35, nota 5, Staff numbers and costs (continued), 2025 y 2024 en £'000. Debajo, en una
+  frase, las indemnizaciones por despido, en libras y fuera del total de personal
+  (staff_severance_disclosed, informativa). El OCR lee mal esa cifra ("€153,00"); en la imagen
+  se lee "£153,000".
 """
 
 from pitch_to_balance_sheet.extract.statements import (
@@ -13,6 +16,7 @@ from pitch_to_balance_sheet.extract.statements import (
     Cross,
     DocumentSpec,
     FigureSpec,
+    SentenceFigureSpec,
     Sum,
     TableSpec,
 )
@@ -43,6 +47,12 @@ STAFF_ROWS = {
     "other_pension_costs": r"^other pension costs",
 }
 
+SEVERANCE_NOTE = (
+    "Nota 5 (pág. 35): «In addition to the above payroll costs, redundancy costs of £153,000 "
+    "(2024: £86,000) were also charged to the income statement during the year.» Fuera del "
+    "total de personal y sin clasificar como excepcional. En libras en la frase: 153 miles. "
+    "Informativa: no ajusta ninguna métrica."
+)
 REVENUE_EX_NOTE = (
     "La cuenta de resultados (pág. 23) separa la columna de football trading, y en Revenue "
     "esa columna es un guion: no hay traspasos ni cesiones."
@@ -89,6 +99,14 @@ SPEC = ClubSpec(
                        note=REVENUE_EX_NOTE),
             FigureSpec("staff_costs", (("staff", "staff_costs_total"),), "2025"),
             FigureSpec("net_result", (("pnl", "net_result"),), "total_2025"),
+        ),
+        sentences=(
+            SentenceFigureSpec(
+                "staff_severance_disclosed", 35, "redundancy costs",
+                # La cifra del año anterior ancla la frase; el OCR no lee el paréntesis ni la £.
+                r"redundancy costs of (?P<amount>\S+) \(?2024: ?£?86,000\)", "2025",
+                scale=1000, image_reading="£153,000", note=SEVERANCE_NOTE,
+                included_in_staff_costs="false"),
         ),
     ),
 )

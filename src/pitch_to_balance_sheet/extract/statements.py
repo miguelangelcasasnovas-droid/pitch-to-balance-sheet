@@ -9,6 +9,8 @@ Reglas:
 - Un guion leído como cero solo vale si al menos un cuadre en el que interviene cuadra.
 - Una celda vacía no es cero: si un cuadre o una cifra la necesita, es un error.
 - Un control (otro documento del mismo club) tiene que dar las mismas cifras.
+- Una cifra que solo está en una frase (sin tabla) se localiza por su frase; si el OCR la lee
+  mal, la lectura en la imagen queda anotada en la cifra.
 """
 
 import re
@@ -21,15 +23,20 @@ from pitch_to_balance_sheet.extract import ocr, pdf_text
 from pitch_to_balance_sheet.extract.tables import (
     UNIT_HEADER,
     Amount,
+    Row,
     Table,
     TableError,
     TableRow,
     group_rows,
     in_region,
+    parse_amount,
     read_tables,
 )
 
 TOLERANCE = 1  # en la unidad del documento, por redondeo
+# Si una indemnización está dentro de staff_costs: "true", "false" o "dudoso" (las cuentas no lo
+# dicen). Vacío en los demás conceptos.
+INCLUDED_IN_STAFF_COSTS = ("", "true", "false", "dudoso")
 
 
 class ExtractionError(RuntimeError):
@@ -108,9 +115,44 @@ class FigureSpec:
     # El informe da el gasto en negativo y aquí va en positivo: es un cambio de signo de
     # presentación, no una cifra derivada.
     negate: bool = False
+    included_in_staff_costs: str = ""
+
+    def __post_init__(self):
+        _check_included(self.concept, self.included_in_staff_costs)
 
     def resolved(self) -> tuple[Part, ...]:
         return tuple(p if isinstance(p, Part) else Part(*p) for p in self.parts)
+
+
+@dataclass(frozen=True)
+class SentenceFigureSpec:
+    """Una cifra que solo se publica en una frase del texto, sin tabla.
+
+    pattern se busca en el texto de cada línea de la página, sin distinguir mayúsculas, y su
+    grupo "amount" es la cifra tal como se lee, con o sin símbolo de moneda delante. scale pasa
+    de la unidad de la frase (p. ej. libras) a la del documento (miles); la división tiene que
+    ser exacta. Si el OCR lee mal la cifra, image_reading es lo que se lee en la imagen de esa
+    línea, y queda anotado en la cifra y en las correcciones.
+    """
+
+    concept: str
+    page: int
+    label: str  # cómo llama el informe a la partida
+    pattern: str
+    column: str
+    scale: int = 1
+    image_reading: str | None = None
+    note: str = ""
+    included_in_staff_costs: str = ""
+
+    def __post_init__(self):
+        _check_included(self.concept, self.included_in_staff_costs)
+
+
+def _check_included(concept: str, value: str) -> None:
+    if value not in INCLUDED_IN_STAFF_COSTS:
+        raise ValueError(f"{concept}: included_in_staff_costs={value!r}; tiene que ser uno de "
+                         f"{INCLUDED_IN_STAFF_COSTS}")
 
 
 @dataclass(frozen=True)
@@ -118,7 +160,7 @@ class DocumentSpec:
     method: str  # "ocr" o "text"
     tables: tuple[TableSpec, ...]
     figures: tuple[FigureSpec, ...]
-    unit_evidence: str  # tiene que aparecer en el texto de cada página usada
+    unit_evidence: str  # tiene que aparecer en el texto de cada página con tablas
     thousands: str = ","
     links: tuple[Link, ...] = ()
     control_index: int | None = None  # None: fuente principal; n: controls[n] de sources.yaml
@@ -128,6 +170,7 @@ class DocumentSpec:
     control_kind: str = "identical"
     # Si la especificación todavía no se puede escribir (p. ej. falta el PDF), el motivo.
     pending: str | None = None
+    sentences: tuple[SentenceFigureSpec, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -180,6 +223,7 @@ class Figure:
     method: str
     note: str
     negated: bool = False
+    included_in_staff_costs: str = ""
 
     @property
     def is_derived(self) -> bool:
@@ -244,6 +288,40 @@ def ocr_note(amounts: tuple[Amount, ...], method: str) -> str:
             notes.append("corrección: " + "; ".join(amount.fixes))
     prefix = "OCR" if method == "ocr" else "texto del PDF, sin OCR"
     return f"{prefix}: " + (", ".join(dict.fromkeys(notes)) if notes else "sin corrección")
+
+
+def sentence_amount(rows: list[Row], spec: SentenceFigureSpec,
+                    thousands: str) -> tuple[Amount, Row]:
+    """La cifra de la frase, en la unidad del documento, y la línea donde está."""
+    matches = [(row, m) for row in rows if (m := re.search(spec.pattern, row.text, re.I))]
+    if len(matches) != 1:
+        raise ExtractionError(f"pág. {spec.page}: la frase de {spec.concept} ({spec.pattern}) "
+                              f"aparece {len(matches)} veces")
+    row, match = matches[0]
+    raw = match.group("amount")
+    ocr_read = parse_amount(raw.lstrip("£€$"), thousands)
+    if spec.image_reading is None:
+        read = ocr_read
+        if read is None or read.dash:
+            raise ExtractionError(
+                f"pág. {spec.page}: {spec.concept}: {raw!r} no es un importe. Si el OCR lo lee "
+                "mal, hay que leerlo en la imagen y anotarlo en image_reading")
+    else:
+        read = parse_amount(spec.image_reading.lstrip("£€$"), thousands)
+        if read is None or read.dash:
+            raise ExtractionError(f"pág. {spec.page}: {spec.concept}: la lectura en la imagen "
+                                  f"{spec.image_reading!r} no es un importe")
+        if ocr_read is not None and ocr_read.value == read.value:
+            raise ExtractionError(
+                f"pág. {spec.page}: {spec.concept}: el OCR ya lee {raw!r}; sobra image_reading")
+    if read.value % spec.scale:
+        raise ExtractionError(f"pág. {spec.page}: {spec.concept}: {read.value:,} no es múltiplo "
+                              f"exacto de {spec.scale:,}")
+    fixes = read.fixes
+    if spec.image_reading is not None:
+        fixes = (f"cifra leída en la imagen ({spec.image_reading}) porque el OCR falló "
+                 f"(lee {raw!r})", *fixes)
+    return Amount(read.value // spec.scale, raw, fixes), row
 
 
 def find_rows(table: Table, patterns: dict[str, str], page: int) -> dict[str, TableRow]:
@@ -438,7 +516,8 @@ def read_document(name: str, spec: DocumentSpec, pdf_path: Path, sha256: str,
         value = sum(c.sign * c.amount.value for c in components)
         figures.append(Figure(
             figure_spec.concept, figure_spec.column, -value if figure_spec.negate else value,
-            tuple(components), spec.method, figure_spec.note, figure_spec.negate))
+            tuple(components), spec.method, figure_spec.note, figure_spec.negate,
+            figure_spec.included_in_staff_costs))
 
     covered = {cell for check in checks if check.ok for cell in check.cells}
     used = {cell for check in checks for cell in check.cells} | figure_cells
@@ -446,4 +525,21 @@ def read_document(name: str, spec: DocumentSpec, pdf_path: Path, sha256: str,
         if _amount(loaded, cell).dash and cell not in covered:
             raise ExtractionError(f"pág. {loaded[cell[0]].spec.page}: el guion de {cell[1]} "
                                   f"[{cell[2]}] se leyó como cero y ningún cuadre lo respalda")
-    return DocumentResult(name, figures, checks, *_corrections(loaded))
+
+    notes, summary = _corrections(loaded)
+    for sentence in spec.sentences:
+        observations, image_path = _page(spec.method, pdf_path, sha256, sentence.page, interim,
+                                         ocr.FULL_PAGE, reocr)
+        amount, row = sentence_amount(group_rows(observations), sentence, spec.thousands)
+        figures.append(Figure(
+            sentence.concept, sentence.column, amount.value,
+            (Component(sentence.page, sentence.label, sentence.column, 1, amount, row,
+                       image_path),),
+            spec.method, sentence.note, included_in_staff_costs=sentence.included_in_staff_costs))
+        if sentence.image_reading is not None:
+            summary["cifras leídas en la imagen porque el OCR falló"] = summary.get(
+                "cifras leídas en la imagen porque el OCR falló", 0) + 1
+        if amount.fixes:
+            notes.append(f"pág. {sentence.page} {sentence.concept}: {amount.raw!r} -> "
+                         f"{amount.value:,} ({'; '.join(amount.fixes)})")
+    return DocumentResult(name, figures, checks, notes, summary)

@@ -57,6 +57,10 @@ STAFF_ANCHORS = {
     "other_staff_costs": r"^outros gastos com pessoal$",
     "staff_costs_total": r"^$",
 }
+SEVERANCE_NOTE = (
+    "Indemnizações (nota 18, pág. 159): una fila ordinaria dentro del total de personal, sin "
+    "clasificar como excepcional. Informativa: no ajusta ninguna métrica."
+)
 REVENUE_EX_NOTE = (
     "La nota 15 (pág. 157) desglosa los ingresos operativos en direitos de televisão, "
     "atividades comerciais y receitas de jogos; los traspasos van aparte, en transações de "
@@ -104,6 +108,8 @@ SPEC = ClubSpec(
             FigureSpec("revenue_ex_player_trading", (("pnl", "operating_revenue"),), "2025",
                        note=REVENUE_EX_NOTE),
             FigureSpec("staff_costs", (("staff", "staff_costs_total"),), "2025"),
+            FigureSpec("staff_severance_disclosed", (("staff", "severance"),), "2025",
+                       note=SEVERANCE_NOTE, included_in_staff_costs="true"),
             FigureSpec("net_result", (("pnl", "net_result"),), "2025"),
         ),
     ),

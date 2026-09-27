@@ -30,7 +30,9 @@ from pitch_to_balance_sheet.sources.local import document_file
 
 SOURCE_NAMES = {"companies_house": "Companies House", "manual": "PDF manual", "url": "web del club"}
 CONCEPTS = ("revenue_total_reported", "revenue_ex_player_trading", "staff_costs",
-            "staff_costs_exceptional", "net_result")
+            "staff_costs_exceptional", "staff_severance_disclosed", "net_result")
+# Marca de la tabla: si la indemnización está dentro de los gastos de personal.
+INCLUDED_MARKS = {"true": " (dentro)", "false": " (fuera)", "dudoso": " (¿dentro?)"}
 RESTATEMENT_THRESHOLD_PCT = 1.0  # sección 5 del plan
 
 
@@ -173,6 +175,7 @@ def write_outputs(season: str, results: list[ClubResult]) -> list[str]:
                 "currency_reported": spec.currency,
                 "value_full": figure.value * spec.multiplier,
                 "is_derived": figure.is_derived,
+                "included_in_staff_costs": figure.included_in_staff_costs,
                 "components": figure.sources,
                 "source": result.source,
                 "source_file": result.pdf,
@@ -230,16 +233,18 @@ def _value(figure: Figure | None) -> str:
     if figure is None:
         return "—"
     text = f"{figure.value:,}" if figure.value >= 0 else f"({-figure.value:,})"
-    return text + (" *" if figure.is_derived else "")
+    return (text + (" *" if figure.is_derived else "")
+            + INCLUDED_MARKS.get(figure.included_in_staff_costs, ""))
 
 
 def table(results: list[ClubResult]) -> str:
-    """Tabla final. Un * marca las cifras derivadas (is_derived)."""
+    """Tabla final. Un * marca las cifras derivadas (is_derived); en las indemnizaciones, entre
+    paréntesis, si están dentro de los gastos de personal."""
     names = {club.club_id: club.name for club in load_clubs()}
     lines = ["| Club | Fuente | Ingresos publicados | Ingresos sin traspasos | "
-             "Gastos de personal | Personal excepcional | Resultado neto | Moneda | Unidad | "
-             "Páginas | Cuadres | Controles | Notas de OCR |",
-             "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |"]
+             "Gastos de personal | Personal excepcional | Indemnizaciones informadas | "
+             "Resultado neto | Moneda | Unidad | Páginas | Cuadres | Controles | Notas de OCR |",
+             "|" + " --- |" * 14]
     for result in results:
         by_concept = {figure.concept: figure for figure in result.figures}
         ok = not result.error

@@ -48,6 +48,10 @@ REVENUE_EX_NOTE = (
     "Totale ricavi e proventi menos Proventi da gestione diritti calciatori. Regla de la "
     "sección 9 del plan."
 )
+SEVERANCE_NOTE = (
+    "Incentivazioni all'esodo (nota 40, pág. 175): una fila ordinaria dentro del personal "
+    "tesserato, sin clasificar como excepcional. Informativa: no ajusta ninguna métrica."
+)
 STAFF_NOTE = (
     "Suma de los totales de las notas 40 (personale tesserato) y 41 (altro personale): la "
     "cuenta de resultados no tiene una línea de total de personal."
@@ -156,6 +160,8 @@ def document(language: str, control_index: int | None) -> DocumentSpec:
                        "2025", note=REVENUE_EX_NOTE),
             FigureSpec("staff_costs", (("note40", "total"), ("note41", "total")), "2025",
                        note=STAFF_NOTE),
+            FigureSpec("staff_severance_disclosed", (("note40", "termination_incentives"),),
+                       "2025", note=SEVERANCE_NOTE, included_in_staff_costs="true"),
             FigureSpec("net_result", (("pnl", "net_result"),), "2025"),
         ),
     )
