@@ -14,6 +14,10 @@
 # Cuando la agrupación del propio club choca con este criterio, manda el criterio, y el motivo de
 # la partida lo anota. Un concepto al que no va ninguna partida vale 0, derivado, si las
 # partidas suman exactamente el total; solo es hueco si el club no publica desglose.
+# Si el informe anual publica la cifra de una parte de una línea en cualquier sitio (tablas,
+# notas o informe de gestión), esa parte se clasifica con el criterio: la frase se localiza por
+# su texto y las partes tienen que sumar la línea de origen (decisión 45). La partida del resto
+# resta las demás (minus). Si solo hay texto sin cifra, la partida se queda donde está, con nota.
 # Una partida que no se puede clasificar sin decidir es dudosa: concept: null y sus candidatos;
 # sus conceptos candidatos quedan como hueco hasta que decida el usuario. Ahora no hay ninguna.
 #
@@ -184,8 +188,10 @@
       hotel:
         cell: note36.hotel
         label: Servizi alberghieri (dentro de Altri ricavi e proventi)
-        concept: revenue_other
-        reason: Resto de Altri ricavi e proventi, a other por decisión del usuario.
+        concept: revenue_commercial
+        reason: >-
+          Servicios hoteleros, commercial (criterio). Choca con la agrupación del club, que los
+          mete en Altri ricavi e proventi: manda el criterio (decisión del usuario del 28/09/2026).
       insurance:
         cell: note36.insurance
         label: Indennizzi e altri proventi assicurativi (dentro de Altri ricavi e proventi)
@@ -194,15 +200,18 @@
       stadium_events:
         cell: note36.stadium_events
         label: Proventi da eventi e attività stadio "no match day" (dentro de Altri ricavi e proventi)
-        concept: revenue_other
+        concept: revenue_commercial
         reason: >-
-          Resto de Altri ricavi e proventi, a other por decisión del usuario. Con el criterio
-          serían commercial (eventos fuera de partido): pendiente de confirmar.
+          Eventos del estadio fuera de partido, commercial (criterio). Choca con la agrupación
+          del club, que los mete en Altri ricavi e proventi: manda el criterio (decisión del
+          usuario del 28/09/2026).
       rents:
         cell: note36.rents
         label: Affitti attivi (dentro de Altri ricavi e proventi)
         concept: revenue_other
-        reason: Alquileres, sobre todo del negocio de retail cedido a Fanatics (nota 36).
+        reason: >-
+          Alquileres, sobre todo del negocio de retail cedido a Fanatics (nota 36): other, por
+          decisión del usuario del 28/09/2026.
       other:
         cell: note36.other
         label: Altri (dentro de Altri ricavi e proventi)
@@ -235,14 +244,35 @@
         reason: Merchandising, commercial (criterio; era dudosa, decidida por el usuario).
       conference:
         cell: revenue.conference
-        label: Conference, Catering, Sonstige
+        minus: [report.hospitality, report.presale, report.loans]
+        label: Conference, Catering, Sonstige (el resto, sin hospitality, preventa ni cesiones)
         concept: revenue_commercial
         reason: >-
-          Commercial (era dudosa, decidida por el usuario), con nota: puede incluir catering de
-          partido. Según el informe de gestión (pág. 57), de los 50.008 miles son hospitality y
-          public catering 22.052, eventos fuera de partido y tours 5.186, comisiones de preventa
-          de entradas 5.086, cesiones de internacionales 3.049 y cesiones, derechos de formación
-          y solidaridad FIFA 3.858.
+          El resto de la línea (19.012 miles), commercial: eventos fuera de partido y tours
+          (5.186), cesiones de internacionales (3.049), alquileres y otros, según el informe de
+          gestión (pág. 57). Decisión del usuario del 28/09/2026.
+      hospitality:
+        cell: report.hospitality
+        label: Hospitality Catering und Public Catering (dentro de Conference, Catering, Sonstige)
+        concept: revenue_matchday
+        reason: >-
+          Hospitality y catering del día de partido, matchday (criterio). Cifra del informe de
+          gestión (pág. 57): choca con la agrupación del club, manda el criterio.
+      presale:
+        cell: report.presale
+        label: Vorverkaufsgebühren und Porto (dentro de Conference, Catering, Sonstige)
+        concept: revenue_matchday
+        reason: >-
+          Comisiones de preventa y envío de entradas y abonos, matchday (criterio). Cifra del
+          informe de gestión (pág. 57).
+      loans:
+        cell: report.loans
+        label: Erlöse aus Leihgeschäften, Ausbildungsentschädigungen, FIFA-Solidarität
+        concept: player_trading
+        reason: >-
+          Cesiones, derechos de formación y solidaridad FIFA dentro de los ingresos: se restan de
+          revenue_ex_player_trading (sección 9 del plan) y van a player_trading_other_income.
+          Cifra del informe de gestión (pág. 57).
   ajax:
     source: nota 25, pág. 108
     column: "2025"
@@ -399,7 +429,8 @@
         concept: revenue_other
         reason: >-
           Otros ingresos de explotación: reembolsos de seguros de jugadores y compensaciones por
-          la Eurocopa (nota 25).
+          la Eurocopa de 2024 (591 miles, nota 25). Se quedan en other, con esta nota, por
+          decisión del usuario del 28/09/2026.
   lazio:
     source: conto economico consolidato, pág. 141 del XHTML (etiquetas iXBRL)
     column: "2025"
@@ -429,7 +460,11 @@
         cell: ixbrl.other_income
         label: Altri ricavi (ifrs-full:OtherIncome)
         concept: revenue_other
-        reason: Otros ingresos del club (nota 33).
+        reason: >-
+          Otros ingresos del club (nota 33). Una frase de la nota da los amistosos de verano
+          (763 miles) y los derechos de exclusiva (160 miles), pero su cifra de marco («Ricavi da
+          altri» 2.295) no es la de la tabla (2.955): no cuadra y no se reparte, pendiente de
+          decisión del usuario (28/09/2026).
       player_rights_income:
         cell: ixbrl.player_rights_income
         label: Proventi da gestione diritti calciatori (ext:ProventiDaGestioneDirittiCalciatori)
@@ -572,4 +607,6 @@
         cell: turnover.other_income
         label: Other income
         concept: revenue_other
-        reason: Créditos fiscales de I+D, subvenciones e international fees (nota 4).
+        reason: >-
+          Créditos fiscales de I+D, subvenciones e international fees (nota 4). Las international
+          fees son de fútbol, pero el informe no da su cifra: se quedan en other, con esta nota.

@@ -24,6 +24,12 @@ Fase 3a, en los dos idiomas:
 - pág. 155, nota 8, en una frase: las außerplanmäßige Wertminderungen / impairment losses de
   los jugadores reclasificados como mantenidos para la venta, que van dentro de las
   amortizaciones de la cuenta.
+- pág. 57, informe de gestión, en frases: el desglose de "Conference, Catering, Sonstige"
+  (decisión del usuario del 28/09/2026). Las cesiones, derechos de formación y solidaridad FIFA
+  (3.858) se restan de revenue_ex_player_trading y van a player_trading_other_income; la
+  hospitality y el catering (22.052) y la preventa de entradas (5.086) van a matchday, y el
+  resto de la línea, a commercial. Cuadres: el total de la frase es la línea de la nota 16, y
+  Conference y Catering (27.237) es la hospitality y el catering más los eventos (5.186).
 """
 
 from pitch_to_balance_sheet.extract import mix
@@ -33,9 +39,12 @@ from pitch_to_balance_sheet.extract.statements import (
     DocumentSpec,
     FigureSpec,
     Link,
+    LinkSum,
+    Part,
     SentenceFigureSpec,
     Sum,
     TableSpec,
+    TextCellSpec,
 )
 
 YEARS = ("2025", "2024")
@@ -56,12 +65,30 @@ ATTRIBUTABLE_NOTE = (
     "126): todo el resultado; no hay minoritarios. Informativa."
 )
 REVENUE_EX_NOTE = (
-    "La nota 16 (pág. 160) desglosa los ingresos en Spielbetrieb, Werbung, TV-Vermarktung, "
-    "Merchandising y Conference, Catering, Sonstige; los traspasos van aparte, en Ergebnis aus "
-    "Transfergeschäften (nota 17). Pero según el informe de gestión (pág. 57), Conference, "
-    "Catering, Sonstige incluye 3.858 de cesiones, derechos de formación y solidaridad FIFA: "
-    "pendiente de decidir si se restan (no es una línea de las cuentas)."
+    "Konzernumsatzerlöse menos las cesiones, derechos de formación y solidaridad FIFA (3.858) que "
+    "el informe de gestión (pág. 57) sitúa dentro de Conference, Catering, Sonstige. Los "
+    "traspasos van aparte, en Ergebnis aus Transfergeschäften (nota 17). Regla de la sección 9."
 )
+REPORT_CELLS = {  # clave -> (rótulo, patrón en alemán, patrón en inglés), pág. 57
+    "line_total": ("Conference, Catering, Sonstige",
+                   r"^TEUR (?P<amount>[\d.]+) \(Vorjahr TEUR 56\.004\) – eine Reduktion",
+                   r"to EUR (?P<amount>[\d,]+) thousand\. This also"),
+    "conference_catering": ("Conference und Catering",
+                            r"lag mit TEUR (?P<amount>[\d.]+) um TEUR 1\.228 unter",
+                            r"previous year to EUR (?P<amount>[\d,]+) thousand\. Borussia"),
+    "hospitality": ("Hospitality Catering und Public Catering",
+                    r"sanken um TEUR 1\.493 auf TEUR (?P<amount>[\d.]+) \(Vorjahr",
+                    r"declined by EUR 1,493 thousand to EUR (?P<amount>[\d,]+) thousand"),
+    "events": ("Veranstaltungen außerhalb des Spielbetriebes und Stadiontouren",
+               r"um TEUR 265 auf TEUR (?P<amount>[\d.]+) \(Vorjahr TEUR 4\.921\)",
+               r"^(?P<amount>[\d,]+) thousand \(previous year: EUR 4,921 thousand\)"),
+    "presale": ("Vorverkaufsgebühren und Porto",
+                r"Erlöse in Höhe von TEUR (?P<amount>[\d.]+) \(Vorjahr TEUR 4\.852\)",
+                r"generated income of EUR (?P<amount>[\d,]+)$"),
+    "loans": ("Erlöse aus Leihgeschäften, Ausbildungsentschädigungen, FIFA-Solidarität",
+              r"beliefen sich auf TEUR (?P<amount>[\d.]+) \(Vorjahr",
+              r"year on year to EUR (?P<amount>[\d,]+) thousand \(previous year: EUR 1,671"),
+}
 
 
 def document(language: str, control_index: int | None) -> DocumentSpec:
@@ -181,8 +208,16 @@ def document(language: str, control_index: int | None) -> DocumentSpec:
             *(Link(("revenue", "total", year), ("pnl", "revenue", year)) for year in YEARS),
             *(Link(("transfers", "result", year), ("pnl", "net_transfer_income", year))
               for year in YEARS),
+            # Las frases del informe de gestión hablan de la misma línea, y sus partes cuadran.
+            Link(("report", "line_total", "2025"), ("revenue", "conference", "2025")),
+            LinkSum(("report", "conference_catering", "2025"),
+                    (("report", "hospitality", "2025"), ("report", "events", "2025"))),
             MIX.check(),
         ),
+        text_cells=tuple(TextCellSpec("report", key, 57, label, german_pattern if german
+                                      else english_pattern)
+                         for key, (label, german_pattern, english_pattern)
+                         in REPORT_CELLS.items()),
         sentences=(
             SentenceFigureSpec(
                 "impairment_player_registrations", 155,
@@ -192,10 +227,11 @@ def document(language: str, control_index: int | None) -> DocumentSpec:
                                 r"\(previous year: EUR 9,986 thousand\)"),
                 "2025", note=IMPAIRMENT_NOTE),
         ),
-        gaps={**MIX.gaps(), "player_trading_other_income": PLAYER_OTHER_INCOME_GAP},
+        gaps=MIX.gaps(),
         figures=(
             FigureSpec("revenue_total_reported", (("pnl", "revenue"),), "2025"),
-            FigureSpec("revenue_ex_player_trading", (("pnl", "revenue"),), "2025",
+            FigureSpec("revenue_ex_player_trading",
+                       (Part("pnl", "revenue"), Part("report", "loans", sign=-1)), "2025",
                        note=REVENUE_EX_NOTE),
             FigureSpec("staff_costs", (("staff", "staff_costs_total"),), "2025"),
             FigureSpec("net_result", (("pnl", "net_result"),), "2025"),
@@ -208,15 +244,15 @@ def document(language: str, control_index: int | None) -> DocumentSpec:
                             "150): la amortización del año de los jugadores."),
             FigureSpec("profit_on_player_disposals", (("transfers", "result"),), "2025",
                        note=DISPOSALS_NOTE),
+            FigureSpec("player_trading_other_income", (("report", "loans"),), "2025",
+                       note="Erlöse aus Leihgeschäften, Ausbildungsentschädigungen und dem "
+                            "FIFA-Solidaritätsmechanismus (informe de gestión, pág. 57): dentro "
+                            "de Conference, Catering, Sonstige, restados de los ingresos sin "
+                            "traspasos."),
         ),
     )
 
 
-PLAYER_OTHER_INCOME_GAP = (
-    "pendiente de decidir: según el informe de gestión (pág. 57), los ingresos por cesiones, "
-    "derechos de formación y solidaridad FIFA (3.858 miles) están dentro de la partida de "
-    "ingresos «Conference, Catering, Sonstige», no fuera de ellos"
-)
 
 
 SPEC = ClubSpec(

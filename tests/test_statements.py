@@ -434,3 +434,22 @@ def test_un_concepto_no_puede_ser_hueco_y_cifra(tmp_path):
                          unit_evidence=THOUSANDS_EVIDENCE, gaps={"net_result": "no se publica"})
     with pytest.raises(ExtractionError, match="hueco y cifra a la vez"):
         read_document("principal", spec_, TABLE, "fixture", tmp_path)
+
+
+def test_una_cifra_de_una_frase_se_usa_como_celda(tmp_path):
+    from dataclasses import replace
+
+    from pitch_to_balance_sheet.extract.statements import TextCellSpec
+
+    base = spec()
+    text = replace(base, text_cells=(
+        TextCellSpec("frases", "turnover", 1, "Turnover en el texto",
+                     r"^Turnover (?P<amount>[\d,]+) 900$"),),
+        links=(Link(("frases", "turnover", "2025"), ("pnl", "turnover", "2025")),),
+        figures=(*base.figures, FigureSpec("revenue_other", (
+            Part("pnl", "turnover"), Part("frases", "turnover", sign=-1)), "2025")))
+    result = read_document("principal", text, TABLE, "fixture", tmp_path)
+    link = [check for check in result.checks if check.relation.startswith("frases.")]
+    assert [(c.reported, c.computed, c.ok) for c in link] == [(1000, 1000, True)]
+    (other,) = [f for f in result.figures if f.concept == "revenue_other"]
+    assert other.value == 0 and other.components[1].label == "Turnover en el texto"

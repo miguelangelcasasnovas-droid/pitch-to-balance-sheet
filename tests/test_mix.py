@@ -43,7 +43,8 @@ def test_una_dudosa_deja_sin_cifra_a_sus_candidatos(tmp_path):
     assert [p.row for p in figures[mix.UNASSIGNED].resolved()] == ["retail"]
     assert club.lines == 3  # las cesiones no suman revenue_ex_player_trading
     assert club.check() == LinkSum(("revenue", "total", "2025"), tuple(
-        ("revenue", key, "2025") for key in ("gate", "tv", "retail", "loans")))
+        ("revenue", key, "2025") for key in ("gate", "tv", "retail", "loans")),
+        signs=(1, 1, 1, 1))
 
 
 def test_un_concepto_sin_partidas_vale_cero_derivado_del_total(tmp_path):
@@ -72,8 +73,9 @@ def test_el_mapeo_mal_escrito_es_error(tmp_path, old, new, error):
 def _cells(document) -> set[tuple[str, str]]:
     if isinstance(document, IxbrlDocumentSpec):
         return {("ixbrl", key) for key in document.concepts}
-    return {(table.name, key) for table in document.tables
-            for key in (*table.rows, *table.totals_after, *table.rows_by_order)}
+    return ({(table.name, key) for table in document.tables
+             for key in (*table.rows, *table.totals_after, *table.rows_by_order)}
+            | {(cell.table, cell.key) for cell in document.text_cells})
 
 
 def test_cada_club_tiene_sus_partidas_y_todas_existen_en_su_especificacion():
@@ -119,3 +121,28 @@ def test_pandera_valida_el_reparto_con_la_tolerancia_de_redondeo():
 
 def test_pandera_sin_clubes_no_valida_nada():
     assert run.validate_mix(_frame().iloc[0:0]) == []
+
+
+def test_una_parte_de_una_linea_con_cifra_propia_se_saca_de_ella(tmp_path):
+    """Dortmund: de «Conference, Catering, Sonstige» salen la hospitality (matchday) y las
+    cesiones (traspasos); el resto resta las dos, y el total es la suma de todo."""
+    extra = ("      rest:\n"
+             "        cell: revenue.conference\n"
+             "        minus: [report.hospitality, report.loans]\n"
+             "        label: Resto\n"
+             "        concept: revenue_broadcasting\n"
+             "        reason: El resto.\n"
+             "      hospitality: {cell: report.hospitality, label: Hosp, "
+             "concept: revenue_matchday, reason: Hospitality.}\n")
+    club = _load(tmp_path, YAML.replace("cell: revenue.loans", "cell: report.loans") + extra)
+    figures = {figure.concept: figure for figure in club.figures("2025")}
+    assert [(p.table, p.row, p.sign) for p in figures["revenue_broadcasting"].resolved()] == [
+        ("revenue", "tv", 1), ("revenue", "conference", 1), ("report", "hospitality", -1),
+        ("report", "loans", -1)]
+    values = {("revenue", "gate"): 10, ("revenue", "tv"): 20, ("revenue", "retail"): 5,
+              ("report", "loans"): 3, ("revenue", "conference"): 50,
+              ("report", "hospitality"): 30}
+    check = club.check()
+    # Las celdas sacadas se restan del resto y se suman como partida: el total no cambia.
+    assert sum(sign * values[part[:2]] for part, sign in zip(check.parts, check.signs,
+                                                           strict=True)) == 10 + 20 + 5 + 50

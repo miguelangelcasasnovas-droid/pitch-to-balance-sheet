@@ -35,10 +35,16 @@ class LineItem:
     concept: str | None  # None: dudosa, hasta que decida el usuario
     reason: str
     candidates: tuple[str, ...] = ()  # conceptos posibles de una partida dudosa
+    # Celdas que se restan: la parte de una línea que queda tras sacar otras partidas de ella.
+    minus: tuple[tuple[str, str, str], ...] = ()
 
     @property
     def cell(self) -> tuple[str, str, str]:
         return (self.table, self.row, self.column)
+
+    def parts(self, sign: int = 1) -> tuple[Part, ...]:
+        return (Part(self.table, self.row, self.column, sign),
+                *(Part(*cell, -sign) for cell in self.minus))
 
 
 @dataclass(frozen=True)
@@ -79,26 +85,27 @@ class ClubMix:
                 continue
             if not items:  # 0, derivado: el total menos todas las partidas
                 figures.append(FigureSpec(
-                    concept, (Part(*self.total), *(Part(item.table, item.row, item.column, -1)
-                                                  for item in self.items)),
+                    concept, (Part(*self.total),
+                              *(part for item in self.items for part in item.parts(-1))),
                     column, note=f"El club no tiene una partida de este tipo: el total publicado "
                                  f"({self.source}) menos todas sus partidas, que suman "
                                  "exactamente el total, es 0."))
                 continue
             figures.append(FigureSpec(
-                concept, tuple(Part(item.table, item.row, item.column) for item in items),
+                concept, tuple(part for item in items for part in item.parts()),
                 column, note=f"{' + '.join(item.label for item in items)} ({self.source}). "
                              "Mapeo en config/line_items.yaml."))
         unassigned += [item for item in self.items if item.concept is None]
         if unassigned:
             figures.append(FigureSpec(
-                UNASSIGNED, tuple(Part(item.table, item.row, item.column) for item in unassigned),
-                column))
+                UNASSIGNED, tuple(part for item in unassigned for part in item.parts()), column))
         return tuple(figures)
 
     def check(self) -> LinkSum:
         """El total publicado es la suma de todas las partidas, traspasos incluidos."""
-        return LinkSum(self.total, tuple(item.cell for item in self.items))
+        parts = [part for item in self.items for part in item.parts()]
+        return LinkSum(self.total, tuple((p.table, p.row, p.column) for p in parts),
+                       signs=tuple(p.sign for p in parts))
 
     @property
     def lines(self) -> int:
@@ -131,8 +138,9 @@ def load(season: str = "2024/25", path: Path = LINE_ITEMS) -> dict[str, ClubMix]
             if not item.get("reason"):
                 raise ValueError(f"{club_id}.{key}: falta el motivo")
             column = item.get("column", club["column"])
+            minus = tuple(_cell(cell, column) for cell in item.get("minus", ()))
             items.append(LineItem(key, *_cell(item["cell"], column)[:2], column, item["label"],
-                                  concept, item["reason"], candidates))
+                                  concept, item["reason"], candidates, minus))
         clubs[club_id] = ClubMix(club_id, club["source"], _cell(club["total"], club["column"]),
                                  tuple(items))
     return clubs

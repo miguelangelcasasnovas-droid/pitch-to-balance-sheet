@@ -88,6 +88,7 @@ class LinkSum:
     total: tuple[str, str, str]  # tabla, fila, columna
     parts: tuple[tuple[str, str, str], ...]
     sign: int = 1  # -1 si el total va en negativo y las partes en positivo
+    signs: tuple[int, ...] = ()  # signo de cada parte; vacío: todas suman
 
 
 @dataclass(frozen=True)
@@ -179,6 +180,22 @@ class SentenceFigureSpec:
         _check_included(self.concept, self.included_in_staff_costs)
 
 
+@dataclass(frozen=True)
+class TextCellSpec:
+    """Una cifra de una frase (del informe de gestión, por ejemplo) que se usa como una celda: en
+    cuadres, cifras y partidas de ingresos. Se localiza por su texto, como una
+    SentenceFigureSpec (decisión 45), y las de una misma página forman una tabla de una columna
+    con ese nombre."""
+
+    table: str
+    key: str
+    page: int
+    label: str
+    pattern: str
+    column: str = "2025"
+    scale: int = 1
+
+
 def _check_included(concept: str, value: str) -> None:
     if value not in INCLUDED_IN_STAFF_COSTS:
         raise ValueError(f"{concept}: included_in_staff_costs={value!r}; tiene que ser uno de "
@@ -205,6 +222,7 @@ class DocumentSpec:
     without: dict[str, str] = field(default_factory=dict)
     # Conceptos que el club no publica: hueco, con el motivo.
     gaps: dict[str, str] = field(default_factory=dict)
+    text_cells: tuple[TextCellSpec, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -545,12 +563,17 @@ def _checks(document: str, loaded: dict[str, LoadedTable], links: tuple[Link, ..
                     len(rule.parts)))
     for link in links:
         if isinstance(link, LinkSum):
-            parts = " + ".join('.'.join(p) for p in link.parts)
+            signs = link.signs or (1,) * len(link.parts)
+            parts = "".join(("" if index == 0 and sign > 0 else " − " if sign < 0 else " + ")
+                            + ".".join(part)
+                            for index, (sign, part) in enumerate(zip(signs, link.parts,
+                                                                     strict=True)))
             checks.append(Check(
                 document, loaded[link.total[0]].spec.page,
                 f"{'.'.join(link.total)} = " + (f"-({parts})" if link.sign < 0 else parts),
                 link.total[2], _amount(loaded, link.total).value,
-                link.sign * sum(_amount(loaded, part).value for part in link.parts),
+                link.sign * sum(sign * _amount(loaded, part).value
+                                for sign, part in zip(signs, link.parts, strict=True)),
                 (link.total, *link.parts), len(link.parts)))
             continue
         checks.append(Check(
@@ -607,6 +630,37 @@ def _page(method: str, pdf_path: Path, sha256: str, page: int, interim: Path, re
         return ocr.load_page(folder, page, region)
     return (pdf_text.page_observations(pdf_path, page),
             pdf_text.page_image(pdf_path, sha256, page, interim / "text"))
+
+
+def _text_tables(spec: DocumentSpec) -> dict[str, list[TextCellSpec]]:
+    tables: dict[str, list[TextCellSpec]] = {}
+    for cell in spec.text_cells:
+        tables.setdefault(cell.table, []).append(cell)
+    for table, cells in tables.items():
+        if len({cell.page for cell in cells}) != 1:
+            raise ExtractionError(f"las frases de {table} tienen que ser de una sola página")
+    return tables
+
+
+def _text_table(spec: DocumentSpec, name: str, cells: list[TextCellSpec], pdf_path: Path,
+                sha256: str, interim: Path, reocr: bool) -> LoadedTable:
+    """Las frases de una página como una tabla de una columna: una fila por frase."""
+    page = cells[0].page
+    observations, image_path = _page(spec.method, pdf_path, sha256, page, interim,
+                                     ocr.FULL_PAGE, reocr)
+    rows = group_rows(observations)
+    found = {}
+    for cell in cells:
+        sentence = SentenceFigureSpec(cell.key, page, cell.label, cell.pattern, cell.column,
+                                      scale=cell.scale)
+        amount, row = sentence_amount(rows, sentence, spec.thousands)
+        found[cell.key] = TableRow(normalize_label(cell.label), cell.label, None, {0: amount},
+                                   row)
+    columns = tuple(dict.fromkeys(cell.column for cell in cells))
+    if len(columns) != 1:
+        raise ExtractionError(f"las frases de {name} tienen que ser de una sola columna")
+    table_spec = TableSpec(name, page, columns, {key: "" for key in found})
+    return LoadedTable(table_spec, Table((), (), list(found.values())), found, image_path)
 
 
 def _exact(value: Decimal) -> int | Decimal:
@@ -782,6 +836,8 @@ def read_document(name: str, spec: DocumentSpec, pdf_path: Path, sha256: str,
                 raise ExtractionError(f"pág. {page}: {exc}") from exc
         loaded[table_spec.name] = LoadedTable(table_spec, table, rows, image_path)
 
+    for table, cells in _text_tables(spec).items():
+        loaded[table] = _text_table(spec, table, cells, pdf_path, sha256, interim, reocr)
     checks = _checks(name, loaded, spec.links)
     for table_spec in spec.tables:
         if table_spec.unit_from and not any(

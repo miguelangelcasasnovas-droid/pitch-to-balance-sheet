@@ -1,6 +1,6 @@
 # Estado del proyecto
 
-Actualizado: 27/09/2026 (fase 3a, segunda vuelta)
+Actualizado: 28/09/2026 (fase 3a, tercera vuelta; la 3b no ha empezado)
 
 ## Fase 0: cerrada
 
@@ -529,9 +529,9 @@ Hecha y cerrada el 27/09/2026 con el OK del usuario, que comprobó el CI de `e0b
    - «ß» como «ss» en los rótulos.
 8. **Tests:** 142, en verde.
 
-## Fase 3a, segunda vuelta: criterio Deloitte y otros ingresos de jugadores (hecha, a falta del OK)
+## Fase 3a, segunda vuelta: criterio Deloitte y otros ingresos de jugadores (cerrada)
 
-Hecha el 27/09/2026. Moneda original: no se ha convertido nada a EUR.
+Hecha el 27/09/2026 y cerrada con el OK del usuario, que comprobó el CI de `df6b663`. La tabla vigente es la de la tercera vuelta.
 
 **Resultado** (`python -m pitch_to_balance_sheet extract`, exit 0), en miles de la moneda de cada club; Lazio se guarda en euros y aquí va redondeado a miles. Un * marca las cifras derivadas:
 
@@ -575,6 +575,46 @@ Cuadres: 654, todos OK; 21 por redondeo (20 de Porto y 1 de Lazio). pandera vali
    - Manchester United: sin reexpresión.
    - Porto: el comunicado coincide ahora también en broadcasting (77,152) y other (17,579). Matchday y commercial quedan sin control, porque el comunicado mete la hospitality en Publicidade.
 8. **Tests:** 143, en verde.
+
+## Fase 3a, tercera vuelta: partes de líneas con cifra propia (hecha; la 3b, parada)
+
+Hecha el 28/09/2026. **La fase 3b no se ha empezado:** el usuario pidió parar si algo de la reclasificación no cuadraba, y Lazio no cuadra (punto 3).
+
+**Resultado** (`python -m pitch_to_balance_sheet extract`, exit 0), en miles; Lazio, en euros redondeados a miles. Un * marca las cifras derivadas:
+
+| Club | Moneda | Matchday | Broadcasting | Commercial | Other | Suma = ingresos sin traspasos | Amortización | Deterioro | Resultado por traspasos | Otros ingresos de jugadores |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Arsenal | GBP | 153,854 | 272,784 | 263,193 | 713 | sí | 171,627 | 15,241 | 81,237 | 454 |
+| Chelsea | GBP | 86,762 | 203,230 | 200,865 | 0 * | sí | 212,247 | 12,097 | 57,906 | hueco |
+| Liverpool | GBP | 115,591 | 263,659 | 323,472 | 0 * | sí | 117,165 | 183 | 53,268 | hueco |
+| Manchester City | GBP | 75,084 | 278,627 * | 340,383 | 0 * | sí | 169,546 | hueco | 95,210 | hueco |
+| Tottenham Hotspur | GBP | 126,473 | 161,709 * | 276,699 | 0 * | sí | 141,180 | 0 | 52,565 | hueco |
+| Newcastle United | GBP | 51,560 | 161,066 * | 120,179 | 2,517 | sí | 99,502 | 366 | 19,875 | hueco |
+| Manchester United | GBP | 160,263 | 172,977 * | 333,274 * | 0 * | sí | 193,109 | hueco | 48,742 | 0 |
+| Juventus | EUR | 65,411 | 177,389 | 139,296 * | 37,809 * | sí | 116,781 | 8,151 | 89,675 * | 19,855 * |
+| Borussia Dortmund | EUR | 82,359 * | 227,200 | 212,602 * | 0 * | sí | 85,396 | 7,000 | 37,842 | 3,858 |
+| Celtic | GBP | 60,250 * | 45,208 | 36,105 * | 2,034 | sí | 13,845 | 1,804 | 31,488 | hueco |
+| Ajax | EUR | 64,265 * | 32,476 * | 75,868 * | 5,520 | sí | 41,344 | hueco | 10,333 | hueco |
+| Benfica | EUR | 41,703 | 148,007 | 40,908 | 0 * | sí | 41,204 | 967 | 94,773 | 2,285 |
+| Lazio | EUR | 22,891 | 94,467 | 20,878 * | 4,906 | sí | 32,709 | 1,543 | 11,144 | 2,900 |
+| FC Porto | EUR | 24,140 * | 77,152 * | 30,669 * | 17,579 * | sí | 31,036 | 3,341 | 92,942 | 16,553 * |
+
+Cuadres: 659, todos OK; 23 por redondeo (20 de Porto, 2 de Dortmund y 1 de Lazio). pandera valida los 14 clubes.
+
+1. **Dortmund:** «Conference, Catering, Sonstige» (50.008) se reparte con las cifras del informe de gestión (pág. 57), en los dos idiomas:
+   - cesiones, formación y solidaridad FIFA, 3.858: salen de revenue_ex_player_trading, que pasa de 526,019 a 522,161, y van a player_trading_other_income;
+   - hospitality y catering, 22.052, y comisiones de preventa, 5.086: a matchday;
+   - el resto, 19.012: a commercial.
+   - **Cuadres:** el total de la frase (50.008) es la línea de la nota 16, y Conference y Catering (27.237) es hospitality y catering más eventos (22.052 + 5.186 = 27.238; 1 de redondeo).
+   - Para leerlo, el motor tiene ahora celdas de texto: frases localizadas por su texto que se usan como celdas (`TextCellSpec`). Una partida del YAML puede restar otras celdas (`minus`).
+2. **Juventus:** los eventos del estadio sin partido (4,682) y los servicios hoteleros (5,024) pasan a commercial; los alquileres (3,539) siguen en other.
+3. **Lazio, sin aplicar, porque no cuadra:**
+   - La frase de la nota 33 (pág. 193) da los amistosos de verano (763 miles) y los derechos de exclusiva (160 miles).
+   - Pero su propia cifra de marco, «Ricavi da altri ammontano a Euro 2.295 migliaia», no es la de la tabla de la misma nota, «Da altri 2.955». Las partes que cita (1.291 + 76 + 160 + 763 = 2.290) son «in gran parte» de 2.295, no de 2.955.
+   - En la misma nota, el texto da 30 miles de Contributi y la tabla, 213.
+   - Las partes no se pueden cuadrar con la línea de origen (salvaguarda de la decisión 45).
+4. **Newcastle** (international fees, sin cifra) y **Porto** (seguros y compensación de la Eurocopa, 591 miles): se quedan en other, con nota en `line_items.yaml`.
+5. **Tests:** 145, en verde.
 
 ## Decisiones
 
@@ -702,24 +742,29 @@ Tomadas por el usuario el 27/09/2026 (fase 3a, segunda vuelta):
 67. **Juventus:** las iniziative commerciali a commercial y el resto de «Altri ricavi e proventi» a other.
 68. **Deterioro de Manchester United:** hueco si la nota de movimientos no tiene la fila.
 
-Tomadas en la segunda vuelta de la fase 3a, a falta del OK del usuario:
+Tomadas en la segunda vuelta de la fase 3a y aceptadas por el usuario el 28/09/2026:
 
 69. **`player_trading_other_income` también en Porto, Benfica y Manchester United,** que lo publican por separado en sus notas de traspasos.
+
+Tomadas por el usuario el 28/09/2026 (fase 3a, tercera vuelta):
+
+70. **Regla general de clasificación:** si el informe anual publica una cifra en cualquier parte, se aplica el criterio, con las salvaguardas de la decisión 45. Si solo hay texto sin cifra, la partida se queda donde está, con nota (sección 9 del plan).
+71. **Dortmund:** el reparto de «Conference, Catering, Sonstige» del punto 1.
+72. **Juventus:** eventos y hotel a commercial, y alquileres a other. Manda el criterio sobre la instrucción anterior.
+73. **Newcastle y Porto:** se quedan en other, con nota.
 
 ## Pendientes
 
 | Pendiente | Para cuándo | Detalle |
 | --- | --- | --- |
 | PDF manual de Arsenal | Opcional | Si el usuario lo deja en `data/raw/manual/arsenal_2024-25.pdf`, pasa a ser la fuente principal. Hay que añadirlo a `sources.yaml` con su URL y registrarlo |
-| OK a la segunda vuelta de la fase 3a | Antes de seguir | La tabla y la decisión 69 |
-| Dortmund: cesiones y hospitality dentro de «Conference, Catering, Sonstige» | Antes de las métricas | 3.858 de cesiones, formación y solidaridad (¿se restan de revenue_ex_player_trading?), 22.052 de hospitality y catering y 5.086 de preventa (¿matchday?). Solo están en el texto del informe de gestión (pág. 57) |
-| Resto de «Altri ricavi e proventi» de Juventus | Antes de las métricas de mix | Eventos del estadio sin partido (4,682), servicios hoteleros (5,024) y alquileres (3,539) serían commercial con el criterio; hoy van a other |
-| Partidas de other con algo de fútbol, solo en el texto | Antes de las métricas de mix | Lazio: los amistosos de verano (763 miles) y los derechos de exclusiva (160) van dentro de «Da altri». Newcastle: international fees dentro de Other income. Porto: reembolsos de seguros de jugadores y compensaciones de la Eurocopa dentro de Outros proveitos. Sin tabla que los separe, siguen en other |
+| Lazio: amistosos y derechos de exclusiva | Antes de la fase 3b | La frase no cuadra con la tabla de la nota 33 (punto 3 de la tercera vuelta): ¿se aplica igual, se deja en other con nota, u otra cosa? |
+| Fase 3b | Cuando el usuario decida lo de Lazio | Balance, acciones, EUR con los tipos del BCE, fact_financials en parquet y DuckDB, y la tabla resumen en EUR |
 | Hooks y OCR fuera del Mac | Si se trabaja desde la VM Linux | El hook apunta al `.venv` del Mac y el binario de gitleaks es de macOS arm64: desde la VM, `git commit` fallaría. El OCR tampoco funciona fuera de macOS |
 
 El resto de comprobaciones de la fase 2 está en la sección 7.1 y en los riesgos de `plan.md`.
 
 ## Siguiente paso
 
-1. El usuario revisa la segunda vuelta de la fase 3a, la decisión 69 y los dos pendientes de Dortmund y Juventus.
-2. Con los 14 clubes: conversión a EUR con los tipos del BCE (sección 5 del plan) y tabla consolidada.
+1. El usuario decide qué hacer con Lazio.
+2. Fase 3b: balance, acciones, conversión a EUR, fact_financials y tabla resumen en EUR.

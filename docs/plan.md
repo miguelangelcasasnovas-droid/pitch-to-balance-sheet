@@ -248,6 +248,10 @@ Cinco métricas por club y temporada, y una valoración por EV/ingresos que da u
   - commercial: patrocinio, merchandising, retail, licencias, y conferencias o catering fuera de partido;
   - other: solo lo que no es fútbol (inmuebles y similares), lo mínimo posible.
 - **Cuando la agrupación del propio club choca con el criterio,** manda el criterio, y el motivo de la partida lo anota en `line_items.yaml`.
+- **Regla general para cerrar la clasificación** (decidida el 28/09/2026):
+  - Si el informe anual publica en cualquier parte (tablas, notas o informe de gestión) la cifra de una parte de una línea, esa parte se clasifica con el criterio.
+  - Salvaguardas de la decisión 45: la frase se localiza por su texto, y las partes tienen que sumar la línea de origen. La partida del resto resta las demás.
+  - Si solo hay texto sin cifra, la partida se queda donde está, con nota.
 - **Concepto sin partidas:** vale 0, derivado (`is_derived`), si las partidas del club suman exactamente `revenue_ex_player_trading`. Si no suman exactamente, la extracción da error. Solo es hueco si el club no publica desglose.
 - **Partida dudosa:** una que no se puede clasificar sin decidir. Queda sin concepto y con sus candidatos hasta que decida el usuario; mientras tanto, esos conceptos son hueco.
 - **Validación con pandera:** matchday + broadcasting + commercial + other, más las partidas pendientes, tiene que ser `revenue_ex_player_trading`, con la tolerancia de redondeo de la sección 5. Si no cuadra, la extracción sale con error.
