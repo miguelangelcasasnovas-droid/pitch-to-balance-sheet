@@ -22,13 +22,23 @@ miles, negativos entre paréntesis y la columna 30.06.2024 antes que la 30.06.20
   del usuario del 27/09/2026). La cabecera "Outros serviços" ocupa dos líneas y la página no
   dice la unidad: la confirma el cuadre con las tres líneas de la cuenta, que sí la dice.
 
+Fase 3b, balance al 30/06/2025:
+- pág. 116 (230-231), Demonstração Consolidada da Posição Financeira: activo en la mitad
+  izquierda y pasivo en la derecha.
+- pág. 141, mitad derecha, nota 11: la antigüedad de los saldos de clientes, con las
+  transações com passes de jogadores corrientes, en nominal (solo se usa la columna Total).
+- pág. 148, mitad derecha, nota 21: fornecedores no corrientes y corrientes a 30.06.2025, con
+  las transações de passes de jogadores, en nominal, y la actualización financiera del conjunto.
+- acciones: pág. 145, nota 17 (22.500.000 acciones), y pág. 42, las 100 acciones propias.
+El comunicado solo trae el balance resumido: los conceptos de balance quedan sin control.
+
 Comunicado (control), en miles de euros, columnas 2023/2024 y 2024/2025 y, a la derecha,
 variación y porcentaje, que se dejan fuera de la región:
 - pág. 4: demonstração dos resultados resumida y desglose de los proveitos operacionais.
 - pág. 5: desglose de los custos operacionais.
 """
 
-from pitch_to_balance_sheet.extract import mix
+from pitch_to_balance_sheet.extract import balance, mix
 from pitch_to_balance_sheet.extract.statements import (
     ClubSpec,
     Cross,
@@ -39,10 +49,61 @@ from pitch_to_balance_sheet.extract.statements import (
     Part,
     Sum,
     TableSpec,
+    TextCellSpec,
 )
 
 YEARS = ("2024", "2025")  # en el orden de las columnas
 RIGHT_HALF = (0.5, 0.0, 1.0, 1.0)
+LEFT_HALF = (0.0, 0.0, 0.5, 1.0)
+BALANCE_HEADER = r"^30\.06\.202[45]$"
+CURRENT_ASSETS = {
+    "inventories": r"^inventarios$", "receivables": r"^clientes$",
+    "other_debtors": r"^outros devedores correntes$", "other_assets": r"^outros ativos correntes$",
+    "financial": r"^outros ativos financeiros$", "cash": r"^caixa e equivalentes de caixa$",
+    "total": r"^total de ativos correntes$",
+}
+NONCURRENT_LIABILITIES = {
+    "bonds": r"^emprestimos obrigacionistas$", "other_loans": r"^outros emprestimos$",
+    "leases": r"^passivos de locacao$", "suppliers": r"^fornecedores$",
+    "other": r"^outros passivos nao correntes$", "post_employment": r"^responsabilidades por",
+    "deferred_tax": r"^passivos por impostos diferidos$", "provisions": r"^provisoes$",
+    "total": r"^total de passivos nao correntes$",
+}
+CURRENT_LIABILITIES = {
+    "bank": r"^emprestimos bancarios$", "bonds": r"^emprestimos obrigacionistas$",
+    "other_loans": r"^outros emprestimos$", "leases": r"^passivos de locacao$",
+    "other_creditors": r"^outros credores$", "suppliers": r"^fornecedores$",
+    "other": r"^outros passivos correntes$", "total": r"^total de passivos correntes$",
+}
+SUPPLIERS_NONCURRENT = {
+    "current_account": r"^fornecedores, conta corrente$",
+    "transfers": r"^transacoes de passes de jogadores$",
+    "discount": r"^atualizacao de dividas a terceiros$",
+    # El total no tiene rótulo, pero el texto del PDF le pone el de una nota al pie que lo pisa.
+    "total": r"^dragon notes$",
+}
+SUPPLIERS_CURRENT = {
+    "current_account": r"^$", "transfers": r"^transacoes com passes de jogadores$",
+    "discount": r"^atualizacao de dividas a terceiros$",
+}
+CUSTOMERS_AGEING = {
+    "current_account": r"^clientes conta corrente\b",
+    "transfers": r"^transacoes com passes de jogadores\b",
+    "operations": r"^operacoes correntes\b",
+}
+BORROWINGS_NOTE = (
+    "Empréstimos bancários, obrigacionistas y outros empréstimos (pág. 116, nota 19): los "
+    "empréstitos obligacionistas (incluidas las Dragon Notes, 115.000) y el factoring de "
+    "Sagasta, que el club presenta como outros empréstimos. Cuadra con la dívida financeira "
+    "líquida del comunicado (pág. 7): 272.502 − 18.409 de caja = 254.093."
+)
+TRANSFER_NOTE = (
+    "Transações com passes de jogadores (notas 11 y 21): los importes corrientes y los "
+    "acreedores no corrientes van en nominal, sin la actualización financiera, que el informe "
+    "da para el conjunto de clientes o fornecedores. Los deudores no corrientes son la línea "
+    "clientes del balance (pág. 116): solo tiene transações com passes (5.700 en nominal, pág. "
+    "142), así que es su valor actualizado."
+)
 PNL_ROWS = {
     "sales": r"^vendas$",
     "services": r"^prestacoes de servicos$",
@@ -185,7 +246,8 @@ SPEC = ClubSpec(
                "Euros» en la 154 del informe, en el texto del PDF.",
     primary=DocumentSpec(
         method="text",
-        unit_evidence=r"milhares de euros",
+        # En la pág. 116 el rótulo va en negrita y el texto del PDF duplica cada letra.
+        unit_evidence=r"milhares de euros|mmiillhhaarreess ddee eeuurrooss",
         thousands=".",
         tables=(
             TableSpec(
@@ -237,6 +299,41 @@ SPEC = ClubSpec(
                 totals_after={"staff_costs_total": "other"},
                 sums=(Sum("staff_costs_total", tuple(STAFF_ROWS)),),
             ),
+            # Fase 3b: balance y notas.
+            TableSpec("bs_noncurrent_assets", 116, YEARS, {"receivables": r"^clientes$"},
+                      region=LEFT_HALF, header=BALANCE_HEADER,
+                      block=(r"^ativos nao correntes$", r"^total de ativos nao correntes$")),
+            TableSpec("bs_current_assets", 116, YEARS, CURRENT_ASSETS, region=LEFT_HALF,
+                      header=BALANCE_HEADER,
+                      block=(r"^ativos correntes$", CURRENT_ASSETS["total"]),
+                      sums=(Sum("total", tuple(CURRENT_ASSETS)[:-1]),)),
+            TableSpec("bs_noncurrent_liabilities", 116, YEARS, NONCURRENT_LIABILITIES,
+                      region=RIGHT_HALF, header=BALANCE_HEADER, select=r"^passivo nao corrente$",
+                      block=(r"^passivo nao corrente$", NONCURRENT_LIABILITIES["total"]),
+                      sums=(Sum("total", tuple(NONCURRENT_LIABILITIES)[:-1]),)),
+            TableSpec("bs_current_liabilities", 116, YEARS, CURRENT_LIABILITIES,
+                      region=RIGHT_HALF, header=BALANCE_HEADER, select=r"^passivo nao corrente$",
+                      block=(r"^passivo corrente$", CURRENT_LIABILITIES["total"]),
+                      sums=(Sum("total", tuple(CURRENT_LIABILITIES)[:-1]),)),
+            TableSpec("customers", 141, ("total", "up_to_90", "over_360"), CUSTOMERS_AGEING,
+                      region=RIGHT_HALF, header=r"^(Total|dias)$",
+                      header_label=r"^30\.06\.2025\b",
+                      sums=(Sum("current_account", ("transfers", "operations"),
+                                columns=("total",)),)),
+            TableSpec("suppliers_noncurrent", 148,
+                      ("total", "year_1", "year_2", "year_3", "year_4"), SUPPLIERS_NONCURRENT,
+                      region=RIGHT_HALF, header=r"^(30\.06\.2025|ANOS?)$",
+                      totals_after={"subtotal": "transfers"},
+                      # La tabla sigue hasta el final de la página: solo el bloque no corriente.
+                      block=(r"^fornecedores - nao corrente$", SUPPLIERS_NONCURRENT["total"]),
+                      sums=(Sum("subtotal", ("current_account", "transfers")),
+                            Sum("total", ("subtotal", "discount")))),
+            TableSpec("suppliers_current", 148, ("total", "up_to_90", "up_to_180", "over_180"),
+                      SUPPLIERS_CURRENT, region=RIGHT_HALF, header=r"^(30\.06\.2025|DIAS)$",
+                      after={"current_account": r"^fornecedores, conta corrente$"},
+                      totals_after={"subtotal": "transfers", "total": "discount"},
+                      sums=(Sum("subtotal", ("current_account", "transfers")),
+                            Sum("total", ("subtotal", "discount")))),
         ),
         links=(
             *(Link(("staff", "staff_costs_total", year), ("pnl", "staff", year), sign=-1)
@@ -249,6 +346,17 @@ SPEC = ClubSpec(
                                 ("income", "player_income"), ("costs", "player_costs"))
               for year in YEARS),
             MIX.check(),
+            # Balance: las notas de fornecedores son sus líneas del balance.
+            Link(("suppliers_noncurrent", "total", "total"),
+                 ("bs_noncurrent_liabilities", "suppliers", "2025")),
+            Link(("suppliers_current", "total", "total"),
+                 ("bs_current_liabilities", "suppliers", "2025")),
+        ),
+        text_cells=(
+            TextCellSpec("share_capital", "shares", 145, "ações nominativas e ordinárias",
+                         r"composto por (?P<amount>\d{1,3}(?:\.\d{3})+) ações"),
+            TextCellSpec("treasury", "shares", 42, "ações próprias",
+                         r"detém (?P<amount>\d+) ações próprias, com valor contabilístico"),
         ),
         gaps=MIX.gaps(),
         figures=(
@@ -276,6 +384,31 @@ SPEC = ClubSpec(
                        (("players", "loan_income"), ("players", "other_income")), "2025",
                        note="Proveitos com empréstimos de jogadores y outros proveitos com "
                             "jogadores (nota 28), fuera de las mais-valias."),
+            # Balance al 30/06/2025.
+            FigureSpec("cash", (("bs_current_assets", "cash"),), "2025",
+                       note="Caixa e equivalentes de caixa (pág. 116, nota 15)."),
+            *balance.split("borrowings",
+                           (Part("bs_current_liabilities", "bank"),
+                            Part("bs_current_liabilities", "bonds"),
+                            Part("bs_current_liabilities", "other_loans")),
+                           (Part("bs_noncurrent_liabilities", "bonds"),
+                            Part("bs_noncurrent_liabilities", "other_loans")),
+                           "2025", note=BORROWINGS_NOTE),
+            *balance.split("lease_liabilities", Part("bs_current_liabilities", "leases"),
+                           Part("bs_noncurrent_liabilities", "leases"), "2025",
+                           note="Passivos de locação (pág. 116, nota 34)."),
+            *balance.split("transfer_payables", Part("suppliers_current", "transfers", "total"),
+                           Part("suppliers_noncurrent", "transfers", "total"), "2025",
+                           note=TRANSFER_NOTE),
+            *balance.split("transfer_receivables", Part("customers", "transfers", "total"),
+                           Part("bs_noncurrent_assets", "receivables"), "2025",
+                           note=TRANSFER_NOTE),
+            FigureSpec("shares_outstanding", (Part("share_capital", "shares", "2025"),
+                                              Part("treasury", "shares", "2025", sign=-1)),
+                       "2025", unit="shares",
+                       note="Acciones de la SAD (22.500.000, nota 17, pág. 145), de las "
+                            "categorías A y B, menos las 100 acciones propias que tiene la "
+                            "PortoSeguro (pág. 42)."),
         ),
     ),
     controls=(DocumentSpec(
@@ -346,6 +479,14 @@ SPEC = ClubSpec(
             "profit_on_player_disposals": "el comunicado da el resultado con cedência de passes "
                                           "(100.436), que incluye cesiones y otros, no las "
                                           "mais-valias",
+            **dict.fromkeys(
+                (*(f"{concept}{suffix}" for concept in ("borrowings", "lease_liabilities",
+                                                        "transfer_payables",
+                                                        "transfer_receivables")
+                   for suffix in ("", "_current", "_non_current")),
+                 "cash", "shares_outstanding"),
+                "el comunicado solo trae el balance resumido por bloques (pág. 7) y la dívida "
+                "financeira líquida, 254.093, que es borrowings menos cash"),
         },
     ),),
 )

@@ -1,6 +1,6 @@
 # Estado del proyecto
 
-Actualizado: 28/09/2026 (fase 3a, tercera vuelta; la 3b no ha empezado)
+Actualizado: 28/09/2026 (fase 3b hecha; parada a la espera del OK del usuario)
 
 ## Fase 0: cerrada
 
@@ -576,9 +576,9 @@ Cuadres: 654, todos OK; 21 por redondeo (20 de Porto y 1 de Lazio). pandera vali
    - Porto: el comunicado coincide ahora también en broadcasting (77,152) y other (17,579). Matchday y commercial quedan sin control, porque el comunicado mete la hospitality en Publicidade.
 8. **Tests:** 143, en verde.
 
-## Fase 3a, tercera vuelta: partes de líneas con cifra propia (hecha; la 3b, parada)
+## Fase 3a, tercera vuelta: partes de líneas con cifra propia (cerrada)
 
-Hecha el 28/09/2026. **La fase 3b no se ha empezado:** el usuario pidió parar si algo de la reclasificación no cuadraba, y Lazio no cuadra (punto 3).
+Hecha el 28/09/2026 y cerrada ese mismo día con el OK del usuario (CI de `a7445b1` en verde). Lazio, que no cuadraba (punto 3), se quedó con la opción 2: los amistosos y los derechos de exclusiva siguen en other, con nota (decisión 74). Las incoherencias de las fuentes están en [`incoherencias-fuentes.md`](incoherencias-fuentes.md).
 
 **Resultado** (`python -m pitch_to_balance_sheet extract`, exit 0), en miles; Lazio, en euros redondeados a miles. Un * marca las cifras derivadas:
 
@@ -615,6 +615,65 @@ Cuadres: 659, todos OK; 23 por redondeo (20 de Porto, 2 de Dortmund y 1 de Lazio
    - Las partes no se pueden cuadrar con la línea de origen (salvaguarda de la decisión 45).
 4. **Newcastle** (international fees, sin cifra) y **Porto** (seguros y compensación de la Eurocopa, 591 miles): se quedan en other, con nota en `line_items.yaml`.
 5. **Tests:** 145, en verde.
+
+## Fase 3b: balance, acciones, EUR y fact_financials, 2024/25 (hecha; parada)
+
+Hecha el 28/09/2026. Todavía no se calculan la valoración ni el SCR.
+
+**Tipos del BCE.** `python -m pitch_to_balance_sheet download-fx` descargó la serie diaria `EXR.D.GBP.EUR.SP00.A` del 01/06/2024 al 30/06/2025 (275 tipos, del 03/06/2024 al 30/06/2025) a `data/raw/ecb/exr_d_gbp_eur_2024_25.csv`, con su entrada en el manifiesto, después de comprobar el robots.txt de data-api.ecb.europa.eu. Solo hace falta la libra: los clubes que no informan en libras informan en euros. El CI usa `tests/fixtures/ecb_exr_d_gbp_eur_sintetico.csv`, con el formato del BCE y tipos inventados.
+
+| Tipo | Cierre 31/05 (Arsenal y Liverpool) | Cierre 30/06 (resto) |
+| --- | --- | --- |
+| Media del año fiscal (cuenta de resultados) | 0,840227 (254 días, del 01/06/2024 al 31/05/2025) | 0,840529 (255 días, del 01/07/2024 al 30/06/2025) |
+| Cierre (balance) | 0,8412, del viernes 30/05/2025 (el 31 es sábado) | 0,8555, del 30/06/2025 |
+
+**Balance al cierre** (`extract`, exit 0), en miles de la moneda original; total y, entre paréntesis, corriente / no corriente. Un * marca las cifras derivadas. Lazio, en miles redondeados (su deuda y sus arrendamientos vienen en millones con dos decimales):
+
+| Club | Moneda | Deuda financiera | Arrendamientos | Caja | Acreedores por traspasos | Deudores por traspasos | Acciones en circulación |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Arsenal | GBP | 358,294 * (0 * / 358,294 *) | 0 * (0 * / 0 *) | 55,994 | 210,800 (sin desglose) | 86,200 (sin desglose) | — |
+| Chelsea | GBP | 0 * (0 * / 0 *) | 0 * (0 * / 0 *) | 49,009 | hueco | hueco | — |
+| Liverpool | GBP | 285,256 * (217,916 / 67,340) | 0 * (0 * / 0 *) | 2,541 | hueco | hueco | — |
+| Manchester City | GBP | 0 * (0 * / 0 *) | 69,666 (1,952 / 67,714) | 173,724 | 423,043 * (169,700 / 253,343) | 95,485 * (61,431 / 34,054) | — |
+| Tottenham Hotspur | GBP | 851,652 * (3,986 / 847,666) | 23,501 * (1,025 / 22,476) | 20,413 | 303,981 * (134,550 / 169,431) | 61,221 (19,688 * / 41,533) | — |
+| Newcastle United | GBP | 58,314 * (58,314 / 0) | 0 * (0 * / 0 *) | 12,701 | 88,908 * (64,918 / 23,990) | 36,769 * (15,248 / 21,521) | — |
+| Manchester United | GBP | 636,974 * (165,119 / 471,855) | 8,471 * (572 / 7,899) | 86,105 | 447,131 (241,978 * / 205,153) | 102,614 (59,195 * / 43,419) | 172,428,859 * |
+| Juventus | EUR | 330,324 * (53,593 * / 276,731 *) | 9,052 * (2,809 / 6,243) | 36,588 | 224,403 * (115,033 / 109,370) | 105,119 * (47,744 / 57,375) | 379,121,815 |
+| Borussia Dortmund | EUR | 34,173 (5,148 / 29,025) | 12,934 (2,696 / 10,238) | 20,633 | 154,845 (sin desglose) | 87,402 (sin desglose) | 110,377,320 * |
+| Celtic | GBP | 4,225 * (96 / 4,129) | 721 * (488 / 233) | 77,310 | hueco | hueco | 94,878,000 (miles) |
+| Ajax | EUR | 0 * (0 * / 0 *) | 103,694 (5,947 / 97,747) | 40,295 | 55,212 * (42,046 / 13,166) | 123,189 * (72,277 / 50,912) | 18,333,333 |
+| Benfica | EUR | 203,299 * (60,368 / 142,931) | hueco | 6,376 | 177,016 * (94,744 / 82,272 *) | 151,435 * (55,776 / 95,659 *) | 23,000,000 |
+| Lazio | EUR | 70,500 * (64,030 * / 6,470 *) | 1,860 * (580 / 1,280) | 6,057 | 91,895 * (47,769 / 44,126) | 24,136 * (16,680 / 7,456) | 67,738,911 |
+| FC Porto | EUR | 272,502 * (33,845 * / 238,657 *) | 5,785 * (2,532 / 3,253) | 18,409 | 118,438 * (67,157 / 51,281) | 65,733 * (61,332 / 4,401) | 22,499,900 * |
+
+Cuadres: 945, todos OK; 30 por redondeo (24 de Porto, 4 de Dortmund y 2 de Lazio). Los controles siguen idénticos (Juventus y Dortmund en inglés, Liverpool en Companies House) y sin reexpresión en Manchester United: el 20-F de 2026 da 10 miles más de acreedores por traspasos a más de un año (0,005 %).
+
+**fact_financials** (`python -m pitch_to_balance_sheet facts`, exit 0): 367 filas de los 14 clubes, 328 cifras y 39 huecos, validadas con pandera, en `data/processed/fact_financials.parquet` y en la tabla `fact_financials` de `data/processed/football.duckdb`. `fx_method`: 91 filas con la media del año fiscal, 82 con el tipo de cierre, 147 en euros sin conversión y 8 de acciones, sin conversión.
+
+**Tabla resumen en EUR**, en millones; la deuda neta negativa (caja neta) va entre paréntesis:
+
+| Club | Moneda original | Ingresos sin traspasos | Personal | Salarios / ingresos | Deuda neta | Deuda neta con traspasos netos | Huecos de la tabla |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Arsenal | GBP | 821.9 | 412.8 | 50.2% | 359.4 | 507.5 | — |
+| Chelsea | GBP | 584.0 | 427.4 | 73.2% | (57.3) | hueco | traspasos a pagar y a cobrar |
+| Liverpool | GBP | 836.3 | 509.1 | 60.9% | 336.1 | hueco | traspasos a pagar y a cobrar |
+| Manchester City | GBP | 825.8 | 485.9 | 58.8% | (121.6) | 261.3 | — |
+| Tottenham Hotspur | GBP | 672.1 | 304.3 | 45.3% | 999.1 | 1,282.9 | — |
+| Newcastle United | GBP | 398.9 | 289.7 | 72.6% | 53.3 | 114.3 | — |
+| Juventus | EUR | 419.9 | 244.7 | 58.3% | 302.8 | 422.1 | — |
+| Celtic | GBP | 170.8 | 88.9 | 52.1% | (84.6) | hueco | traspasos a pagar y a cobrar |
+| Manchester United | GBP | 793.0 | 413.8 | 52.2% | 653.8 | 1,056.5 | — |
+| Borussia Dortmund | EUR | 522.2 | 268.3 | 51.4% | 26.5 | 93.9 | — |
+| Ajax | EUR | 178.1 | 109.1 | 61.3% | 63.4 | (4.6) | — |
+| Benfica | EUR | 230.6 | 127.7 | 55.4% | hueco | hueco | arrendamientos |
+| Lazio | EUR | 143.1 | 98.2 | 68.6% | 66.3 | 134.1 | — |
+| FC Porto | EUR | 149.5 | 81.9 | 54.8% | 259.9 | 312.6 | — |
+
+Qué se ha hecho:
+
+1. **Motor:** cifras con decimales en la unidad de su último decimal (`parse_decimal`), hechos iXBRL de un instante y frases del XHTML de un ESEF, ceros derivados que tienen que dar exactamente 0 (`expect_zero`), rayas de subtotal que el OCR lee como guion (`drop_rules`) y conceptos de balance en `extract/balance.py`.
+2. **OCR nuevo, solo donde hacía falta:** las págs. 15, 32 y 33 del escaneo de Liverpool en Companies House (control); tres regiones de las notas 15 a 17 de Newcastle, porque con la página entera el OCR lee «23,000» donde la imagen dice 23,990; y segundas lecturas de celdas vacías de Arsenal, Chelsea, Liverpool, Tottenham y Newcastle. Las páginas ya guardadas no se han vuelto a pasar por Vision.
+3. **Tests:** 176, en verde (31 nuevos: tipos del BCE, fact_financials y su validación, decimales, rayas, ceros derivados, balance en iXBRL y que cada club da cada concepto de balance como cifra o como hueco).
 
 ## Decisiones
 
@@ -753,18 +812,39 @@ Tomadas por el usuario el 28/09/2026 (fase 3a, tercera vuelta):
 72. **Juventus:** eventos y hotel a commercial, y alquileres a other. Manda el criterio sobre la instrucción anterior.
 73. **Newcastle y Porto:** se quedan en other, con nota.
 
+Tomada por el usuario el 28/09/2026 (cierre de la tercera vuelta):
+
+74. **Lazio, opción 2:** los amistosos (763) y los derechos de exclusiva (160) se quedan en other, con nota: la frase de la nota 33 contradice a su tabla y la salvaguarda de la decisión 45 no se cumple. Las incoherencias de las fuentes van a `docs/incoherencias-fuentes.md`, que irá al README.
+
+Tomadas en la fase 3b, pendientes del OK del usuario:
+
+75. **Tipos:** media aritmética de los tipos publicados en el año fiscal, a 6 decimales; tipo de cierre del día o del último día anterior con tipo; `value_eur` redondeado al euro; más de 5 días seguidos sin tipo es error (sección 5 del plan).
+76. **Deuda financiera** (sección 9 del plan): entran el factoring y la cesión de créditos que el club presenta como deuda (Juventus, 244.776; Porto, 42.997; Lazio), los préstamos de la matriz que el informe llama préstamo (Arsenal, 340.076 de KSE UK; Liverpool, 217.916 de FSG) y la parte de deuda de las preferentes convertibles de Celtic (4.129). Quedan fuera los saldos con City Football Group de Manchester City (131.930 corrientes y 102.031 no corrientes, que la nota no llama préstamo), la cesión de créditos de Benfica (22.078, en outros passivos) y los warrants de Tottenham (52.066).
+77. **Arrendamientos en FRS 102:** 0, derivado de las notas de acreedores, y anotado como no comparable con la NIIF 16 (Arsenal, Chelsea, Liverpool y Newcastle).
+78. **Benfica, arrendamientos: hueco.** El derecho de uso del estadio es con Benfica Estádio, del grupo, y no hay ninguna línea de pasivo por arrendamiento; si existe, va dentro de otra. Por eso su deuda neta es hueco.
+79. **Saldos por traspasos:** valor contable cuando se puede aislar; si no, el nominal de la nota, anotado (Benfica y Porto en la parte corriente, Porto en los acreedores no corrientes). Ajax a más de un año incluye 0,4 millones de gastos anticipados; Lazio usa las líneas «enti settore specifico», que incluyen la Lega (y en los créditos corrientes, 6.523 de Lega-FIGC y 170 de la UEFA); Manchester United incluye «other associated costs»; Arsenal da una sola cifra de cada lado, en millones con un decimal; Dortmund, una sola cifra en frases.
+80. **Huecos de traspasos:** Chelsea, Liverpool y Celtic no los separan de los deudores y acreedores comerciales.
+81. **Deuda 0, derivada,** en Manchester City, Chelsea y Ajax: el balance no tiene deuda financiera y las notas de todas sus líneas suman el total.
+82. **Acciones:** emitidas de todas las clases con los mismos derechos económicos, menos las propias. Celtic: solo las ordinarias (94.878 miles; sin las Convertible Preferred Ordinary ni las Convertible Cumulative Preference). Ajax: el número medio en circulación (18.333.333), que es el del cierre. Juventus: la nota 23 (379.121.815), no la media de la nota 34.
+83. **Lazio:** deuda financiera y arrendamientos de la posizione finanziaria netta (pág. 167), en millones con dos decimales, porque el balance da los arrendamientos dentro de los debiti finanziari y la nota solo publica en miles la parte no corriente.
+84. **Cifras con decimales** en la unidad de su último decimal (`ten_thousands`, `hundred_thousands`), para que sigan siendo enteras (sección 5 del plan).
+85. **Deuda neta:** hueco si falta un componente; la tabla dice cuál.
+86. **Lista cerrada de conceptos** con los nombres que ya usaba la extracción (`revenue_total_reported` en lugar de `revenue_total`) y columnas añadidas a `fact_financials` (sección 5 del plan). `football.duckdb` va en `data/processed/`, y el parquet lo escribe DuckDB.
+87. **Porto:** el título de la pág. 116 sale con cada letra duplicada en el texto del PDF, y la prueba de la unidad admite esa lectura. El comunicado no trae el balance: los conceptos de balance quedan sin control, anotado.
+
 ## Pendientes
 
 | Pendiente | Para cuándo | Detalle |
 | --- | --- | --- |
+| Decisiones 75 a 87 | Antes de la fase siguiente | Sobre todo: qué cuenta como deuda financiera (76), las acciones de Celtic (82), los arrendamientos de Benfica (78) y los saldos por traspasos en nominal (79) |
 | PDF manual de Arsenal | Opcional | Si el usuario lo deja en `data/raw/manual/arsenal_2024-25.pdf`, pasa a ser la fuente principal. Hay que añadirlo a `sources.yaml` con su URL y registrarlo |
-| Lazio: amistosos y derechos de exclusiva | Antes de la fase 3b | La frase no cuadra con la tabla de la nota 33 (punto 3 de la tercera vuelta): ¿se aplica igual, se deja en other con nota, u otra cosa? |
-| Fase 3b | Cuando el usuario decida lo de Lazio | Balance, acciones, EUR con los tipos del BCE, fact_financials en parquet y DuckDB, y la tabla resumen en EUR |
+| README | Con el dashboard | Incluir `docs/incoherencias-fuentes.md` y la lista de huecos |
+| Valoración y SCR | Fase siguiente | No se han calculado, como pidió el usuario |
 | Hooks y OCR fuera del Mac | Si se trabaja desde la VM Linux | El hook apunta al `.venv` del Mac y el binario de gitleaks es de macOS arm64: desde la VM, `git commit` fallaría. El OCR tampoco funciona fuera de macOS |
 
 El resto de comprobaciones de la fase 2 está en la sección 7.1 y en los riesgos de `plan.md`.
 
 ## Siguiente paso
 
-1. El usuario decide qué hacer con Lazio.
-2. Fase 3b: balance, acciones, conversión a EUR, fact_financials y tabla resumen en EUR.
+1. El usuario revisa la fase 3b y las decisiones 75 a 87.
+2. Con su OK: métricas (mix, salarios/ingresos, deuda neta/ingresos, SCR aproximado) y valoración por EV/ingresos, que necesitan los precios de mercado (yfinance) y los ejercicios anteriores para el SCR.

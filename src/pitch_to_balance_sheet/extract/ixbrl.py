@@ -93,6 +93,9 @@ class Report:
     calculations: dict[tuple[str, str], Decimal]
     # página -> tablas de esa página, cada una con sus filas
     tables: dict[int, tuple[tuple[XhtmlRow, ...], ...]] = field(default_factory=dict)
+    # página -> su texto, con los espacios normalizados (para las cifras que solo están en una
+    # frase)
+    texts: dict[int, str] = field(default_factory=dict)
 
     def find(self, concept: str, entity: str, period: str,
              dimensions: tuple[tuple[str, str], ...] = ()) -> Fact:
@@ -222,6 +225,20 @@ def _tables(root: ET.Element) -> dict[int, tuple[tuple[XhtmlRow, ...], ...]]:
     return {page: tuple(tables) for page, tables in pages.items()}
 
 
+def _texts(root: ET.Element) -> dict[int, str]:
+    """El texto de cada página del XHTML (el bloque más externo con número de página)."""
+    pages: dict[int, list[str]] = {}
+    stack = [root]
+    while stack:
+        element = stack.pop()
+        match = PAGE_ID.search(element.get("id") or "") if element.tag == XHTML + "div" else None
+        if not match:
+            stack.extend(reversed(element))
+            continue
+        pages.setdefault(int(match.group(1)), []).append(_text(element))
+    return {page: " ".join(parts) for page, parts in pages.items()}
+
+
 def _calculations(package: zipfile.ZipFile) -> dict[tuple[str, str], Decimal]:
     weights: dict[tuple[str, str], Decimal] = {}
     for name in package.namelist():
@@ -275,4 +292,4 @@ def read_report(path: Path) -> Report:
             element.get("decimals", ""), scale, sign, element.get("format", ""), raw,
             -value if sign == "-" else value, page, _label(row),
             ET.tostring(row, encoding="unicode") if row is not None else ""))
-    return Report(reports[0], tuple(facts), calculations, _tables(root))
+    return Report(reports[0], tuple(facts), calculations, _tables(root), _texts(root))

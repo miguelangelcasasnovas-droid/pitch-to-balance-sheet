@@ -18,17 +18,93 @@ Fase 3a, en los dos 20-F (2025 / 2026):
 - págs. 121 / 123, nota 8, Profit on disposal of intangible assets.
 - págs. 128 / 130, nota 16, Intangible assets: el bloque "Year ended 30 June 2025", columna
   Registrations. No tiene línea de deterioro.
+Fase 3b, balance al 30/06/2025, en los dos 20-F (2025 / 2026):
+- págs. 101-102 / 103-104 (F-8 y F-9), Consolidated balance sheet.
+- págs. 134 / 135, nota 19, y 137 / 138, nota 24, en frases: los saldos por traspasos dentro
+  de trade receivables y trade payables, con la parte a más de un año.
+- págs. 136 / 137, nota 22, en frases: acciones de clase A y B emitidas y acciones de clase A
+  en autocartera.
 """
 
-from pitch_to_balance_sheet.extract import mix
+from pitch_to_balance_sheet.extract import balance, mix
 from pitch_to_balance_sheet.extract.statements import (
     ClubSpec,
     Cross,
     DocumentSpec,
     FigureSpec,
     Link,
+    Part,
     Sum,
     TableSpec,
+    TextCellSpec,
+)
+
+NONCURRENT_LIABILITIES = {
+    "deferred_revenue": r"^contract liabilities - deferred revenue",
+    "payables": r"^trade and other payables$", "borrowings": r"^borrowings$",
+    "leases": r"^lease liabilities$", "derivatives": r"^derivative financial instruments$",
+}
+CURRENT_LIABILITIES = {
+    "deferred_revenue": r"^contract liabilities - deferred revenue",
+    "payables": r"^trade and other payables$", "tax": r"^income tax payable$",
+    "borrowings": r"^borrowings$", "leases": r"^lease liabilities$",
+    "derivatives": r"^derivative financial instruments$", "provisions": r"^provisions$",
+}
+# Frases de las notas, en cada 20-F: (página, patrón). En el de 2025, la cifra del año y la del
+# anterior localizan la frase; en el de 2026, la cifra de 2025 va entre paréntesis.
+NOTE_CELLS = {
+    2025: {
+        ("receivables", "total"): (134, r"football clubs of £(?P<amount>[\d,]+) \(2024: "
+                                        r"£59,845,000\) of which"),
+        ("receivables", "non_current"): (134, r"^£(?P<amount>[\d,]+) \(2024: £27,930,000\) "
+                                              r"is receivable after more than one year"),
+        ("payables", "total"): (137, r"acquisition of registrations of £(?P<amount>[\d,]+) "
+                                     r"\(2024:\s*$"),
+        ("payables", "non_current"): (137, r"^£331,418,000\) of which £(?P<amount>[\d,]+) "
+                                           r"\(2024: £175,835,000\) is due"),
+        ("shares", "class_a"): (136, r"comprised (?P<amount>[\d,]+) \(2024: 56,699,344\) "
+                                     r"Class A"),
+        ("shares", "class_b"): (136, r"^(?P<amount>[\d,]+) \(2024: 114,301,320\) Class B"),
+        ("shares", "treasury"): (136, r"^(?P<amount>[\d,]+) Class A ordinary shares are "
+                                      r"currently held in treasury"),
+    },
+    2026: {
+        ("receivables", "total"): (135, r"football clubs of £[\d,]+ \(2025: "
+                                        r"£(?P<amount>[\d,]+)\) of which"),
+        ("receivables", "non_current"): (135, r"of which £[\d,]+ \(2025: £(?P<amount>[\d,]+)\) "
+                                              r"is receivable"),
+        ("payables", "total"): (138, r"acquisition of registrations of £[\d,]+ \(2025: "
+                                     r"£(?P<amount>[\d,]+)\) of which"),
+        ("payables", "non_current"): (138, r"^\(2025: £(?P<amount>[\d,]+)\) is due after more "
+                                           r"than one year"),
+        ("shares", "class_a"): (137, r"comprised [\d,]+ \(2025: (?P<amount>[\d,]+)\) Class A"),
+        ("shares", "class_b"): (137, r"and [\d,]+ \(2025: (?P<amount>[\d,]+)\) Class B"),
+        ("shares", "treasury"): (137, r"^(?P<amount>[\d,]+) Class A ordinary shares are "
+                                      r"currently held in treasury"),
+    },
+}
+NOTE_LABELS = {
+    ("receivables", "total"): "transfer fees receivable from other football clubs",
+    ("receivables", "non_current"): "receivable after more than one year",
+    ("payables", "total"): "transfer fees and other associated costs",
+    ("payables", "non_current"): "due after more than one year",
+    ("shares", "class_a"): "Class A ordinary shares",
+    ("shares", "class_b"): "Class B ordinary shares",
+    ("shares", "treasury"): "Class A ordinary shares held in treasury",
+}
+TRANSFER_PAYABLES_NOTE = (
+    "Transfer fees and other associated costs de la adquisición de registros, dentro de trade "
+    "payables (nota 24), con la parte a más de un año; la corriente es la diferencia. Incluye "
+    "los costes asociados (p. ej. agentes)."
+)
+TRANSFER_RECEIVABLES_NOTE = (
+    "Transfer fees receivable from other football clubs, dentro de trade receivables (nota 19), "
+    "con la parte a más de un año; la corriente es la diferencia."
+)
+SHARES_NOTE = (
+    "Acciones de clase A y B emitidas al 30/06/2025 (nota 22) menos las 1.682.896 de clase A en "
+    "autocartera (nota 23: 1.683 miles al 30/06/2025 y 2024). Las de clase B no cotizan, pero "
+    "tienen los mismos derechos económicos que las A."
 )
 
 STAFF_ROWS = {
@@ -103,6 +179,8 @@ def document(report_year: int, control_index: int | None) -> DocumentSpec:
         "net_result": r"^loss for the year$",
     }
     operating = ("revenue", "operating_expenses", "profit_disposal_intangibles")
+    balance_columns = columns[:2]
+    assets_page, liabilities_page = (101, 102) if report_year == 2025 else (103, 104)
     if report_year == 2025:  # el 20-F 2025 tiene además "Other operating income"
         pnl_rows["other_operating_income"] = r"^other operating income$"
         operating = ("revenue", "other_operating_income", "operating_expenses",
@@ -153,12 +231,34 @@ def document(report_year: int, control_index: int | None) -> DocumentSpec:
                 cross=(Cross("total", ("goodwill", "registrations", "other"),
                              tuple(INTANGIBLE_ROWS)),),
             ),
+            # Fase 3b: balance.
+            TableSpec("bs_noncurrent_assets", assets_page, balance_columns,
+                      {"trade": r"^trade receivables$"},
+                      block=(r"^non-current assets$", r"^current assets$")),
+            TableSpec("bs_current_assets", assets_page, balance_columns,
+                      {"cash": r"^cash and cash equivalents$"},
+                      block=(r"^current assets$", r"^total assets$")),
+            TableSpec("bs_noncurrent_liabilities", liabilities_page, balance_columns,
+                      NONCURRENT_LIABILITIES, totals_after={"total": "derivatives"},
+                      block=(r"^non-current liabilities$", r"^current liabilities$"),
+                      sums=(Sum("total", tuple(NONCURRENT_LIABILITIES)),)),
+            TableSpec("bs_current_liabilities", liabilities_page, balance_columns,
+                      CURRENT_LIABILITIES, totals_after={"total": "provisions"},
+                      block=(r"^current liabilities$", r"^total equity and liabilities$"),
+                      sums=(Sum("total", tuple(CURRENT_LIABILITIES)),)),
         ),
+        text_cells=tuple(
+            TextCellSpec(table, key, page, NOTE_LABELS[(table, key)], pattern,
+                         scale=1 if table == "shares" else 1000)
+            for (table, key), (page, pattern) in NOTE_CELLS[report_year].items()),
         links=(
             *(Link(("revenue", "total", year), ("pnl", "revenue", year)) for year in columns),
             *(Link(("disposals", "total", year), ("pnl", "profit_disposal_intangibles", year))
               for year in columns),
             MIX.check(),
+            # Todos los trade receivables a más de un año son saldos por traspasos.
+            Link(("receivables", "non_current", "2025"),
+                 ("bs_noncurrent_assets", "trade", "2025")),
         ),
         gaps={**MIX.gaps(), "impairment_player_registrations": IMPAIRMENT_GAP},
         figures=(
@@ -181,6 +281,29 @@ def document(report_year: int, control_index: int | None) -> DocumentSpec:
             FigureSpec("player_trading_other_income", (("disposals", "loan_income"),), "2025",
                        note="Player loan income de la nota 8: guion en 2025, cero, respaldado por "
                             "el cuadre de la nota."),
+            # Balance al 30/06/2025.
+            FigureSpec("cash", (("bs_current_assets", "cash"),), "2025",
+                       note="Cash and cash equivalents (balance, nota 21)."),
+            *balance.split("borrowings", Part("bs_current_liabilities", "borrowings"),
+                           Part("bs_noncurrent_liabilities", "borrowings"), "2025",
+                           note="Borrowings del balance (nota 25): préstamos y bonos "
+                                "(senior secured notes) y la línea de crédito revolving."),
+            *balance.split("lease_liabilities", Part("bs_current_liabilities", "leases"),
+                           Part("bs_noncurrent_liabilities", "leases"), "2025",
+                           note="Lease liabilities del balance (nota 14)."),
+            *balance.split("transfer_receivables",
+                           (Part("receivables", "total"),
+                            Part("receivables", "non_current", sign=-1)),
+                           Part("receivables", "non_current"), "2025",
+                           total=Part("receivables", "total"), note=TRANSFER_RECEIVABLES_NOTE),
+            *balance.split("transfer_payables",
+                           (Part("payables", "total"), Part("payables", "non_current", sign=-1)),
+                           Part("payables", "non_current"), "2025",
+                           total=Part("payables", "total"), note=TRANSFER_PAYABLES_NOTE),
+            FigureSpec("shares_outstanding",
+                       (Part("shares", "class_a"), Part("shares", "class_b"),
+                        Part("shares", "treasury", sign=-1)), "2025", unit="shares",
+                       note=SHARES_NOTE),
         ),
     )
 

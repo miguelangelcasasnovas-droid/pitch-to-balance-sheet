@@ -159,6 +159,23 @@ def parse_amount(raw: str, thousands: str = ",") -> Amount | None:
     return Amount(-value if text.startswith("(") else value, raw, tuple(fixes))
 
 
+def parse_decimal(raw: str, thousands: str, decimals: int) -> Amount | None:
+    """Importe con decimales -> entero en la unidad de su último decimal: "210.8" (millones)
+    son 2.108 décimas de millón y "(0,58)", -58 centésimas. Tiene que traer exactamente esos
+    decimales; si no, None. Así los cuadres siguen siendo con enteros, en la unidad del último
+    dígito publicado."""
+    text = raw.strip().replace(" ", "")
+    if text in DASHES:
+        return Amount(0, raw, dash=True)
+    mark = "," if thousands == "." else "."
+    pattern = (r"\(?\d{1,3}(" + re.escape(thousands) + r"\d{3})*" + re.escape(mark)
+               + r"\d{" + str(decimals) + r"}\)?")
+    if not re.fullmatch(pattern, text) or text.startswith("(") != text.endswith(")"):
+        return None
+    value = int(text.strip("()").replace(thousands, "").replace(mark, ""))
+    return Amount(-value if text.startswith("(") else value, raw)
+
+
 def normalize_label(text: str) -> str:
     text = unicodedata.normalize("NFKD", text.replace("ß", "ss"))
     text = "".join(c for c in text if not unicodedata.combining(c)).lower()

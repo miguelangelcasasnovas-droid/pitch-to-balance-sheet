@@ -35,7 +35,7 @@ def package(tmp_path) -> Path:
 def test_lee_los_hechos_con_contexto_unidad_escala_y_signo(package):
     report = read_report(package)
     assert report.name == "SINTETICO-2031-06-30/reports/informe.xhtml"
-    assert len(report.facts) == 17
+    assert len(report.facts) == 19
     revenue = report.find("ifrs-full:Revenue", LEI, CURRENT)
     assert (revenue.value, revenue.raw, revenue.unit, revenue.decimals) == (
         Decimal(1234567), "1.234.567", "iso4217:EUR", "0")
@@ -162,3 +162,41 @@ def test_tabla_sin_etiquetar_del_xhtml_por_pagina_y_fila(package, tmp_path):
         500000, "thousands", 2, "Costo del personale")
     assert "tabla sin etiquetar del XHTML" in figure.sources
     assert [check.ok for check in result.checks] == [True, True]
+
+
+def test_hechos_de_balance_tabla_en_millones_con_decimales_y_frase(package, tmp_path):
+    """Balance: hechos de un instante, una tabla sin etiquetar en millones con dos decimales (que
+    queda en decenas de miles) y una cifra que solo está en una frase del XHTML."""
+    from pitch_to_balance_sheet.extract.statements import (
+        SentenceFigureSpec,
+        Sum,
+        XhtmlTableSpec,
+    )
+
+    pfn = XhtmlTableSpec(
+        "pfn", 4, ("2031",), (1,),
+        {"other": r"^\.verso altri finanziatori$", "leases": r"^\.verso contratti di locazione$",
+         "total": r"^g\. indebitamento finanziario corrente$"},
+        select=r"^g\. indebitamento", decimals=2, sums=(Sum("total", ("other", "leases")),))
+    spec = IxbrlDocumentSpec(
+        entity=LEI, periods={}, unit="iso4217:EUR", concepts={},
+        instant_concepts={"cash": "ifrs-full:CashAndCashEquivalents",
+                          "debt": "ifrs-full:OtherCurrentFinancialLiabilities"},
+        instants={"2031": "2031-06-30"}, calcs=(), tables=(pfn,),
+        figures=(FigureSpec("cash", (("ixbrl", "cash"),), "2031"),
+                 FigureSpec("lease_liabilities", (("pfn", "leases"),), "2031", negate=True,
+                            unit="ten_thousands")),
+        sentences=(SentenceFigureSpec(
+            "shares_outstanding", 4, "azioni ordinarie",
+            r"suddiviso in numero (?P<amount>\d{1,3}(?:\.\d{3})+) azioni", "2031",
+            unit="shares"),))
+    result = read_document("principal", spec, package, "sha", tmp_path)
+    figures = {figure.concept: figure for figure in result.figures}
+    assert figures["cash"].value == 60000
+    assert "2031-06-30" in figures["cash"].sources
+    assert (figures["lease_liabilities"].value, figures["lease_liabilities"].unit) == (
+        1, "ten_thousands")  # (0,01) millones = 1 decena de miles, en positivo
+    shares = figures["shares_outstanding"]
+    assert (shares.value, shares.unit, shares.page) == (1234567, "shares", 4)
+    assert "frase del XHTML" in shares.sources
+    assert [(c.reported, c.computed) for c in result.checks] == [(-7, -7)]

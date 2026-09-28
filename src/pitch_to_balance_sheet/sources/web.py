@@ -3,8 +3,8 @@
 Antes de descargar se lee el robots.txt del dominio (RFC 9309): si responde 4xx no hay
 restricciones; si responde 5xx o no se puede leer, se supone que todo está prohibido; si
 responde 200, se aplican sus reglas. Si no se permite, WebDownloadError y hay que descargarlo a
-mano. Cada archivo tiene que ser del formato de su extensión (un PDF, o un ZIP como los
-paquetes ESEF) y se registra en el manifiesto con su URL, fecha y sha256.
+mano. Cada archivo tiene que ser del formato de su extensión (un PDF, un ZIP como los
+paquetes ESEF o el CSV de tipos del BCE) y se registra en el manifiesto con su URL, fecha y sha256.
 """
 
 import logging
@@ -26,7 +26,9 @@ ATTEMPTS = 3
 BACKOFF_S = 5.0
 TIMEOUT_S = 120
 # Extensión -> (firma con la que empieza el archivo, content_type del manifiesto).
-FORMATS = {".pdf": (b"%PDF-", "application/pdf"), ".zip": (b"PK\x03\x04", "application/zip")}
+FORMATS = {".pdf": (b"%PDF-", "application/pdf"), ".zip": (b"PK\x03\x04", "application/zip"),
+           # CSV de tipos del BCE (format=csvdata): la cabecera empieza por la columna KEY.
+           ".csv": (b"KEY,", "text/csv")}
 
 
 class WebDownloadError(RuntimeError):

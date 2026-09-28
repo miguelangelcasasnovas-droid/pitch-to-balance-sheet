@@ -462,9 +462,10 @@
         concept: revenue_other
         reason: >-
           Otros ingresos del club (nota 33). Una frase de la nota da los amistosos de verano
-          (763 miles) y los derechos de exclusiva (160 miles), pero su cifra de marco («Ricavi da
-          altri» 2.295) no es la de la tabla (2.955): no cuadra y no se reparte, pendiente de
-          decisión del usuario (28/09/2026).
+          (763 miles) y los derechos de exclusiva (160 miles), pero contradice a la tabla de la
+          misma nota («Ricavi da altri» 2.295 frente a 2.955; Contributi 30 frente a 213): la
+          salvaguarda de la decisión 45 no se cumple y no se reparte. Se quedan en other, con esta
+          nota (decisión del usuario del 28/09/2026). Ver docs/incoherencias-fuentes.md.
       player_rights_income:
         cell: ixbrl.player_rights_income
         label: Proventi da gestione diritti calciatori (ext:ProventiDaGestioneDirittiCalciatori)

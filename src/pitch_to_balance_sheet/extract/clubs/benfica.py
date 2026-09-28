@@ -14,20 +14,78 @@ Fase 3a:
 - pág. 162, nota 20: "Resultado com alienações de direitos de atletas" (plusvalías menos
   minusvalías y comisiones) y el resto hasta el resultado de transacciones de la cuenta;
 - pág. 165, nota 21: amortizaciones y pérdidas por deterioro de derechos de atletas.
+
+Fase 3b, balance al 30/06/2025:
+- pág. 117, Demonstração da posição financeira.
+- pág. 146, nota 7 (clientes e outros devedores), pág. 152, nota 12 (empréstimos obtidos), y
+  pág. 154, nota 13 (fornecedores e outros credores), no corrientes y corrientes.
+- pág. 151, nota 11: el número de acciones (categorías A y B). La SAD no tiene acciones propias
+  (pág. 47).
 """
 
-from pitch_to_balance_sheet.extract import mix
+from pitch_to_balance_sheet.extract import balance, mix
 from pitch_to_balance_sheet.extract.statements import (
     ClubSpec,
     DocumentSpec,
     FigureSpec,
     Link,
     LinkSum,
+    Part,
     Sum,
     TableSpec,
 )
 
 YEARS = ("2025", "2024")
+CURRENT_ASSETS = {"receivables": r"^clientes e outros devedores$", "other": r"^outros ativos$",
+                  "cash": r"^caixa e equivalentes de caixa$",
+                  "total": r"^total do ativo corrente$"}
+NONCURRENT_LIABILITIES = {
+    "provisions": r"^provisoes$", "post_employment": r"^responsabilidades por beneficios",
+    "loans": r"^emprestimos obtidos$", "payables": r"^fornecedores e outros credores$",
+    "other": r"^outros passivos$", "total": r"^total do passivo nao corrente$",
+}
+CURRENT_LIABILITIES = {
+    "loans": r"^emprestimos obtidos$", "payables": r"^fornecedores e outros credores$",
+    "other": r"^outros passivos$", "total": r"^total do passivo corrente$",
+}
+LOANS_NONCURRENT = {
+    "novo_banco": r"^novo banco$", "olb": r"^olb bank$",
+    "bond_2022": r"^benfica sad 2022-2025$", "bond_2023": r"^benfica sad 2023-2026$",
+    "bond_2024": r"^benfica sad 2024-2027$", "bond_2025": r"^benfica sad 2025-2029$",
+}
+LOANS_CURRENT = {"novo_banco": r"^novo banco$", "montepio": r"^montepio$", "olb": r"^olb bank$",
+                 "bond_2021": r"^benfica sad 2021-2024$", "bond_2023": r"^benfica sad 2023-2026$",
+                 "interest": r"^acrescimos de gastos - juros$"}
+RECEIVABLES_CURRENT = {
+    "athletes": r"^direitos de atletas$", "television": r"^direitos de televisao$",
+    "matches": r"^receitas de jogos$", "commercial": r"^atividades comerciais$",
+    "group": r"^empresas do grupo e partes relacionadas$", "sundry": r"^devedores diversos$",
+    "doubtful": r"^clientes e outros devedores de cobranca duvidosa$",
+    "discount": r"^atualizacao de dividas de terceiros$", "impairment": r"^imparidade de creditos$",
+}
+PAYABLES_CURRENT = {
+    "clubs": r"^clubes e sociedades relacionadas com o futebol$",
+    "current_activities": r"^atividades correntes$", "investments": r"^investimentos em ativos$",
+    "group": r"^empresas do grupo e partes relacionadas$",
+    "other": r"^outros credores e operacoes diversas$",
+    "discount": r"^atualizacao de dividas de terceiros$",
+}
+BORROWINGS_NOTE = (
+    "Empréstimos obtidos (pág. 117, nota 12): préstamos bancarios y empréstitos obligacionistas, "
+    "con los intereses devengados (1.301). La cesión de créditos futuros (22.078, en outros "
+    "passivos corrientes, nota 14) no entra: el club no la presenta como empréstimo."
+)
+LEASE_GAP = (
+    "no se publica: el balance (pág. 117) y las notas 12 a 14 no tienen ninguna línea de pasivos "
+    "por arrendamiento. El derecho de uso del estadio (nota 4) es con Benfica Estádio, sociedad "
+    "del grupo (nota 26), y el estado de flujos solo da 28 miles pagados por «Contrato de "
+    "locação»; si hay un pasivo, va dentro de otra línea"
+)
+TRANSFER_NOTE = (
+    "Direitos de atletas / clubes e sociedades relacionadas com o futebol (notas 7 y 13). La "
+    "parte no corriente va neta de su actualización financiera (la única partida del bloque); "
+    "la corriente, en nominal: su actualización e imparidad son del conjunto de la rúbrica."
+)
 HEADER = r"^30\.06\.2[45]$"
 PNL_ROWS = {
     "tv_rights": r"^direitos de televisao$",
@@ -135,6 +193,54 @@ SPEC = ClubSpec(
                 totals_after={"total": "impairment"},
                 sums=(Sum("total", tuple(AMORTISATION_ROWS)),),
             ),
+            # Fase 3b: balance y notas.
+            TableSpec("bs_noncurrent_assets", 117, YEARS,
+                      {"receivables": r"^clientes e outros devedores$"}, header=HEADER,
+                      block=(r"^ativo$", r"^total do ativo nao corrente$")),
+            TableSpec("bs_current_assets", 117, YEARS, CURRENT_ASSETS, header=HEADER,
+                      block=(r"^total do ativo nao corrente$", r"^total do ativo corrente$"),
+                      sums=(Sum("total", ("receivables", "other", "cash")),)),
+            TableSpec("bs_noncurrent_liabilities", 117, YEARS, NONCURRENT_LIABILITIES,
+                      header=HEADER, block=(r"^passivo$", r"^total do passivo nao corrente$"),
+                      sums=(Sum("total", tuple(NONCURRENT_LIABILITIES)[:-1]),)),
+            TableSpec("bs_current_liabilities", 117, YEARS, CURRENT_LIABILITIES, header=HEADER,
+                      block=(r"^total do passivo nao corrente$", r"^total do passivo corrente$"),
+                      sums=(Sum("total", tuple(CURRENT_LIABILITIES)[:-1]),)),
+            TableSpec("loans_noncurrent", 152, YEARS, LOANS_NONCURRENT, header=HEADER,
+                      totals_after={"total": "bond_2025"},
+                      block=(r"^emprestimos obtidos - nao corrente$",
+                             r"^emprestimos obtidos - corrente$"),
+                      sums=(Sum("total", tuple(LOANS_NONCURRENT)),)),
+            TableSpec("loans_current", 152, YEARS, LOANS_CURRENT, header=HEADER,
+                      totals_after={"total": "interest"},
+                      block=(r"^emprestimos obtidos - corrente$", r"^valores em milhares"),
+                      sums=(Sum("total", tuple(LOANS_CURRENT)),)),
+            TableSpec("receivables_noncurrent", 146, YEARS,
+                      {"athletes": r"^direitos de atletas$",
+                       "discount": r"^atualizacao de dividas de terceiros$"},
+                      header=HEADER, totals_after={"total": "discount"},
+                      block=(r"^clientes e outros devedores - nao corrente$",
+                             r"^clientes e outros devedores - corrente$"),
+                      sums=(Sum("total", ("athletes", "discount")),)),
+            TableSpec("receivables_current", 146, YEARS, RECEIVABLES_CURRENT, header=HEADER,
+                      totals_after={"total": "impairment"},
+                      block=(r"^clientes e outros devedores - corrente$",
+                             r"^valores em milhares"),
+                      sums=(Sum("total", tuple(RECEIVABLES_CURRENT)),)),
+            TableSpec("payables_noncurrent", 154, YEARS,
+                      {"clubs": r"^clubes e sociedades relacionadas com o futebol$",
+                       "discount": r"^atualizacao de dividas de terceiros$"},
+                      header=HEADER, totals_after={"total": "discount"},
+                      block=(r"^fornecedores e outros credores - nao corrente$",
+                             r"^fornecedores e outros credores - corrente$"),
+                      sums=(Sum("total", ("clubs", "discount")),)),
+            TableSpec("payables_current", 154, YEARS, PAYABLES_CURRENT, header=HEADER,
+                      totals_after={"total": "discount"},
+                      block=(r"^fornecedores e outros credores - corrente$",
+                             r"^valores em milhares"),
+                      sums=(Sum("total", tuple(PAYABLES_CURRENT)),)),
+            TableSpec("equity", 151, YEARS, {"shares": r"^numero de acoes$"}, header=HEADER,
+                      select=r"^numero de acoes$"),
         ),
         links=(
             *(Link(("staff", "staff_costs_total", year), ("pnl", "staff", year), sign=-1)
@@ -145,8 +251,18 @@ SPEC = ClubSpec(
             *(Link(("amortisation", "total", year), ("pnl", "player_rights_amortisation", year),
                    sign=-1) for year in YEARS),
             MIX.check(),
+            # Balance: cada nota es su línea del balance.
+            *(Link((note, "total", year), (table, line, year))
+              for note, table, line in (
+                  ("loans_noncurrent", "bs_noncurrent_liabilities", "loans"),
+                  ("loans_current", "bs_current_liabilities", "loans"),
+                  ("receivables_noncurrent", "bs_noncurrent_assets", "receivables"),
+                  ("receivables_current", "bs_current_assets", "receivables"),
+                  ("payables_noncurrent", "bs_noncurrent_liabilities", "payables"),
+                  ("payables_current", "bs_current_liabilities", "payables"))
+              for year in YEARS),
         ),
-        gaps=MIX.gaps(),
+        gaps={**MIX.gaps(), **balance.gaps("lease_liabilities", LEASE_GAP)},
         figures=(
             FigureSpec("revenue_total_reported", (("pnl", "operating_revenue"),), "2025"),
             FigureSpec("revenue_ex_player_trading", (("pnl", "operating_revenue"),), "2025",
@@ -166,6 +282,24 @@ SPEC = ClubSpec(
             FigureSpec("player_trading_other_income", (("transactions", "other_income"),),
                        "2025", note="Outros rendimentos com transações de direitos de atletas "
                                     "(nota 20), fuera del resultado com alienações."),
+            # Balance al 30/06/2025.
+            FigureSpec("cash", (("bs_current_assets", "cash"),), "2025",
+                       note="Caixa e equivalentes de caixa (pág. 117, nota 10)."),
+            *balance.split("borrowings", Part("bs_current_liabilities", "loans"),
+                           Part("bs_noncurrent_liabilities", "loans"), "2025",
+                           note=BORROWINGS_NOTE),
+            *balance.split("transfer_payables", Part("payables_current", "clubs"),
+                           (Part("payables_noncurrent", "clubs"),
+                            Part("payables_noncurrent", "discount")), "2025",
+                           note=TRANSFER_NOTE),
+            *balance.split("transfer_receivables", Part("receivables_current", "athletes"),
+                           (Part("receivables_noncurrent", "athletes"),
+                            Part("receivables_noncurrent", "discount")), "2025",
+                           note=TRANSFER_NOTE),
+            FigureSpec("shares_outstanding", (("equity", "shares"),), "2025", unit="shares",
+                       note="Número de ações (nota 11): 23.000.000, de las categorías A (del "
+                            "Sport Lisboa e Benfica) y B. La SAD no tiene acciones propias "
+                            "(pág. 47)."),
         ),
     ),
 )

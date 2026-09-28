@@ -2,10 +2,14 @@
 
 - download: cuentas de Companies House de las fuentes que lo usan, a data/raw/companies_house/.
 - download-web: PDFs de la web de los clubes (fuentes url), a data/raw/web/.
+- download-fx: tipos de referencia diarios del BCE de las monedas de los clubes que no informan
+  en EUR, a data/raw/ecb/.
 - register-manual: PDFs descargados a mano, al manifiesto.
 - text-layer: capa de texto de los PDFs locales, a data/processed/text_layer_<temporada>.csv.
-- extract: ingresos, gastos de personal y resultado neto de cada club, con cuadres y recortes.
+- extract: cifras de la cuenta de resultados y del balance de cada club, con cuadres y recortes.
   Lee el OCR guardado; con --reocr vuelve a pasar Apple Vision (solo macOS).
+- facts: fact_financials en EUR con los tipos del BCE, validada con pandera, a
+  data/processed/fact_financials.parquet y football.duckdb; y la tabla resumen en EUR.
 
 Si un paso falla, sale con código 1 y dice por qué.
 """
@@ -21,7 +25,7 @@ from datetime import UTC, datetime
 
 from dotenv import load_dotenv
 
-from pitch_to_balance_sheet import manifest
+from pitch_to_balance_sheet import facts, fx, manifest
 from pitch_to_balance_sheet.config import (
     PROCESSED_DIR,
     RAW_DIR,
@@ -114,6 +118,37 @@ def download_web(season: str) -> int:
             manifest.upsert(MANIFEST, [entry])
             log.info("%s: data/raw/%s  %d bytes  sha256 %s", club_id, entry.file, entry.bytes,
                      entry.sha256)
+    for error in errors:
+        print(f"error: {error}", file=sys.stderr)
+    return 1 if errors else 0
+
+
+def download_fx(season: str) -> int:
+    """Descarga la serie diaria del BCE de cada moneda que no es EUR, desde el primer día del año
+    fiscal que antes empieza hasta el último cierre, y la registra en el manifiesto."""
+    windows = [fx.fiscal_year(season, club.fiscal_year_end) for club in load_clubs()
+               if club.club_id in SPECS]
+    start, end = min(w[0] for w in windows), max(w[1] for w in windows)
+    errors = []
+    for currency in sorted({spec.currency for spec in SPECS.values()} - {fx.BASE}):
+        file = fx.rates_file(currency, season)
+        if (RAW_DIR / file).exists():
+            try:
+                manifest.verify(RAW_DIR, file, MANIFEST)
+            except manifest.ManifestError as exc:
+                errors.append(str(exc))
+            else:
+                log.info("%s: data/raw/%s ya descargado y con su sha256", currency, file)
+            continue
+        try:
+            entry = web.download_file(fx.download_url(currency, start, end), RAW_DIR, file)
+            rates = fx.load_rates(RAW_DIR / file, currency)
+        except (web.WebDownloadError, fx.FxError) as exc:
+            errors.append(f"{currency}: {exc}")
+            continue
+        manifest.upsert(MANIFEST, [entry])
+        log.info("%s: data/raw/%s  %d tipos del %s al %s  sha256 %s", currency, file,
+                 len(rates), min(rates), max(rates), entry.sha256)
     for error in errors:
         print(f"error: {error}", file=sys.stderr)
     return 1 if errors else 0
@@ -294,6 +329,7 @@ def extract(season: str, club_id: str | None, reocr: bool = False) -> int:
         return 1
     problems = run.validate_mix(frame)
     print("\n" + run.mix_table(results, frame))
+    print("\n" + run.balance_table(results))
     for problem in problems:
         print(f"error: reparto de ingresos (pandera): {problem}", file=sys.stderr)
     for path in written:
@@ -302,15 +338,41 @@ def extract(season: str, club_id: str | None, reocr: bool = False) -> int:
     return 1 if problems or any(result.error for result in results) else 0
 
 
+def build_facts(season: str) -> int:
+    """fact_financials en EUR a partir de las cifras de extract y los tipos del BCE, validada
+    con pandera; y la tabla resumen en EUR."""
+    try:
+        frame = facts.build(season)
+    except (facts.FactsError, fx.FxError, manifest.ManifestError) as exc:
+        print(f"error: fact_financials: {exc}", file=sys.stderr)
+        return 1
+    problems = facts.validate(frame)
+    if problems:
+        for problem in problems:
+            print(f"error: fact_financials (pandera): {problem}", file=sys.stderr)
+        return 1
+    written = facts.write(frame, season)
+    counts = frame.groupby("is_gap").size().to_dict()
+    print(f"fact_financials {season}: {len(frame)} filas, {counts.get(False, 0)} cifras y "
+          f"{counts.get(True, 0)} huecos; pandera OK")
+    print("\n" + facts.summary_table(frame))
+    for path in written:
+        print(f"\n{path.relative_to(ROOT)}", end="")
+    print()
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m pitch_to_balance_sheet")
     commands = parser.add_subparsers(dest="command", required=True)
     for name, help_text in (
         ("download", "descarga las cuentas de Companies House de una temporada"),
         ("download-web", "descarga los PDFs de la web de los clubes (fuentes url)"),
+        ("download-fx", "descarga los tipos de referencia diarios del BCE (monedas no EUR)"),
         ("register-manual", "registra en el manifiesto los PDFs descargados a mano"),
         ("text-layer", "mide la capa de texto de los PDFs locales de config/sources.yaml"),
-        ("extract", "ingresos, gastos de personal y resultado neto, con cuadres y recortes"),
+        ("extract", "cifras de la cuenta de resultados y del balance, con cuadres y recortes"),
+        ("facts", "fact_financials en EUR (parquet y DuckDB), validada, y la tabla resumen"),
     ):
         command = commands.add_parser(name, help=help_text)
         command.add_argument("--season", default="2024/25", help="temporada, p. ej. 2024/25")
@@ -332,7 +394,9 @@ def main(argv: list[str] | None = None) -> int:
     commands_by_name = {
         "download": download,
         "download-web": download_web,
+        "download-fx": download_fx,
         "register-manual": register_manual,
         "text-layer": text_layer,
+        "facts": build_facts,
     }
     return commands_by_name[args.command](args.season)

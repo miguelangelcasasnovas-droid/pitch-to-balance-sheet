@@ -15,9 +15,17 @@ Fase 3a:
   (mapeo en config/line_items.yaml).
 - pág. 33, nota 4, Operating expenses: amortización y deterioro de player registrations (el
   deterioro solo tiene cifra en 2025).
+
+Fase 3b, balance al 31/05/2025 (grupo y sociedad; se usa el grupo):
+- pág. 24, Balance sheet: la caja y los acreedores a menos y a más de un año.
+- pág. 39, notas 15 y 16: los acreedores, con el préstamo de la matriz y las debentures; y la
+  frase de la nota 15 con los saldos por traspasos dentro de other creditors.
+- pág. 38, nota 13: la frase con los saldos por traspasos dentro de other debtors.
+Las dos frases dan el importe en millones con un decimal y no lo separan en corriente y no
+corriente. FRS 102: sin pasivos por arrendamiento.
 """
 
-from pitch_to_balance_sheet.extract import mix
+from pitch_to_balance_sheet.extract import balance, mix
 from pitch_to_balance_sheet.extract.statements import (
     ClubSpec,
     Cross,
@@ -25,6 +33,7 @@ from pitch_to_balance_sheet.extract.statements import (
     FigureSpec,
     Link,
     Part,
+    SentenceFigureSpec,
     Sum,
     TableSpec,
 )
@@ -75,6 +84,41 @@ STAFF_ROWS = {
     "other_pension_costs": r"^other pension costs$",
 }
 
+GROUP_COMPANY = ("group_2025", "group_2024", "company_2025", "company_2024")
+GROUP = ("group_2025", "group_2024")
+BALANCE_ROWS = {
+    "cash": r"^cash at bank and in hand\b",
+    # El OCR lee «due within one year» como «du rithin one yea».
+    "creditors_current": r"^creditors amounts falling du.*ithin one yea",
+    "creditors_noncurrent": r"^creditors amounts falling due after more than one yea",
+}
+CREDITORS_CURRENT = {
+    "trade": r"^trade creditors$", "tax": r"^other tax and social security$",
+    "group": r"^amounts due to group undertakings$", "other": r"^other creditors$",
+    "accruals": r"^accruals and deferred income$",
+}
+# «Amounts due to group undertakings» solo tiene cifra en la sociedad: en el grupo es un guion.
+CREDITORS_CURRENT_LINES = tuple(CREDITORS_CURRENT)
+CREDITORS_NONCURRENT = {
+    "parent": r"^balance due to parent undertaking$", "debentures": r"^debenture loans$",
+    "other": r"^other creditors$", "grants": r"^grants$",
+    "accruals": r"^accruals and deferred income$",
+}
+BORROWINGS_NOTE = (
+    "Balance due to parent undertaking (340.076: un préstamo de KSE UK Inc., reembolsable con "
+    "dos años de preaviso, nota 16) más las debenture loans (18.218). La nota 16 llama «total "
+    "debt» solo a las debentures. A menos de un año no hay deuda financiera: 0, derivado de la "
+    "nota 15 (el total menos todas sus líneas del grupo)."
+)
+LEASE_NOTE = (
+    "0, derivado: las notas 15 y 16 no tienen pasivos por arrendamiento (el total de cada una "
+    "menos todas sus líneas del grupo). " + balance.FRS102_LEASES
+)
+TRANSFER_SPLIT_GAP = (
+    "no se publica: las notas 13 y 15 dan el saldo por traspasos en una sola cifra, dentro de "
+    "other debtors y other creditors a menos y a más de un año"
+)
+
 SPEC = ClubSpec(
     club_id="arsenal",
     currency="GBP",
@@ -119,6 +163,15 @@ SPEC = ClubSpec(
                 sums=(Sum("dai_total", ("amortisation", "impairment", "depreciation"), ("2025",)),
                       Sum("total", ("dai_total", "staff", "other"))),
             ),
+            # Fase 3b: balance y notas 15 y 16.
+            TableSpec("bs", 24, GROUP_COMPANY, BALANCE_ROWS),
+            TableSpec("creditors_current", 39, GROUP_COMPANY, CREDITORS_CURRENT,
+                      select=r"^trade creditors$", totals_after={"total": "accruals"},
+                      sums=(Sum("total", CREDITORS_CURRENT_LINES, GROUP),)),
+            TableSpec("creditors_noncurrent", 39, GROUP_COMPANY, CREDITORS_NONCURRENT,
+                      select=r"^balance due to parent undertaking$",
+                      totals_after={"total": "accruals"},
+                      sums=(Sum("total", tuple(CREDITORS_NONCURRENT), GROUP),)),
         ),
         links=(
             Link(("turnover", "total", "2025"), ("pnl", "group_turnover", "total_2025")),
@@ -126,8 +179,30 @@ SPEC = ClubSpec(
             Link(("turnover", "player_trading", "2025"), ("pnl", "group_turnover", "players_2025")),
             Link(("opex", "total", "2025"), ("pnl", "operating_expenses", "total_2025"), sign=-1),
             MIX.check(),
+            # Cada nota de acreedores es su línea del balance, que va en negativo.
+            *(Link((note, "total", column), ("bs", line, column), sign=-1)
+              for note, line in (("creditors_current", "creditors_current"),
+                                 ("creditors_noncurrent", "creditors_noncurrent"))
+              for column in GROUP),
         ),
-        gaps=MIX.gaps(),
+        sentences=(
+            SentenceFigureSpec(
+                "transfer_receivables", 38, "Other debtors ... in respect of player transfers",
+                r"include £(?P<amount>\d+\.\d) million in respect of player transfers "
+                r"\(2024 - £38\.5 million\)", "group_2025", unit="hundred_thousands", decimals=1,
+                note="Other debtors, a menos y a más de un año, incluyen 86,2 millones por "
+                     "traspasos de jugadores (nota 13): la cifra, en millones con un decimal, "
+                     "queda en centenas de miles de libras."),
+            SentenceFigureSpec(
+                "transfer_payables", 39, "Other creditors ... in respect of player transfers",
+                r"include £(?P<amount>\d+\.\d) million \(2024 - £267\.8 million\) in respect",
+                "group_2025", unit="hundred_thousands", decimals=1,
+                note="Other creditors de las notas 15 y 16 incluyen 210,8 millones por traspasos "
+                     "de jugadores: la cifra, en millones con un decimal, queda en centenas de "
+                     "miles de libras."),
+        ),
+        gaps={**MIX.gaps(), **balance.split_gaps("transfer_payables", TRANSFER_SPLIT_GAP),
+              **balance.split_gaps("transfer_receivables", TRANSFER_SPLIT_GAP)},
         figures=(
             FigureSpec("revenue_total_reported", (("pnl", "group_turnover"),), "total_2025",
                        note="Incluye 454 de player trading (sobre todo cesiones), en la columna "
@@ -152,6 +227,25 @@ SPEC = ClubSpec(
                        note="Player trading de la nota 3: sobre todo cesiones (nota de la pág. 23; "
                             "el informe estratégico, pág. 4, da 0,5 millones de cesiones). Fuera "
                             "de los ingresos sin traspasos."),
+            # Balance al 31/05/2025, columna del grupo.
+            FigureSpec("cash", (("bs", "cash"),), "group_2025",
+                       note="Cash at bank and in hand (pág. 24, nota 14)."),
+            FigureSpec("borrowings_current",
+                       (Part("creditors_current", "total"),
+                        *(Part("creditors_current", line, sign=-1)
+                          for line in CREDITORS_CURRENT_LINES)),
+                       "group_2025", note=BORROWINGS_NOTE, expect_zero=True),
+            FigureSpec("borrowings_non_current",
+                       (("creditors_noncurrent", "parent"), ("creditors_noncurrent", "debentures")),
+                       "group_2025", note=BORROWINGS_NOTE),
+            FigureSpec("borrowings",
+                       (("creditors_noncurrent", "parent"), ("creditors_noncurrent", "debentures")),
+                       "group_2025", note=BORROWINGS_NOTE),
+            *balance.zero_from_lines(
+                "lease_liabilities",
+                (("creditors_current", "total", CREDITORS_CURRENT_LINES),
+                 ("creditors_noncurrent", "total", tuple(CREDITORS_NONCURRENT))),
+                "group_2025", LEASE_NOTE),
         ),
     ),
 )

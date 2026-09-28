@@ -117,21 +117,34 @@ Todo cae en una tabla larga, `fact_financials`, con una fila por club, temporada
 | Fuente | `source_file` + `source_page`, o `source_url` + `retrieved_at`; `sha256` | Archivo y página, o URL y fecha de descarga |
 | Huecos | `is_gap`, `gap_reason` | Dato no publicado: valor vacío y motivo |
 
-Conceptos de partida: `revenue_total`, `revenue_matchday`, `revenue_broadcasting`, `revenue_commercial`, `revenue_other`, `staff_costs`, `amortisation_player_registrations`, `impairment_player_registrations`, `profit_on_player_disposals`, `net_result`, `borrowings`, `lease_liabilities`, `cash`, `transfer_payables`, `transfer_receivables` y, para cotizados, `shares_outstanding`. Tablas de apoyo: `dim_club` (de `clubs.yaml`), `fx_rates` (BCE), `market_prices` (yfinance) y `line_item_map` (de `line_items.yaml`).
+Conceptos, lista cerrada en `src/pitch_to_balance_sheet/concepts.py` (actualizada en la fase 3b con los nombres que ya usa la extracción):
+
+- **Cuenta de resultados:** `revenue_total_reported`, `revenue_ex_player_trading`, `revenue_matchday`, `revenue_broadcasting`, `revenue_commercial`, `revenue_other`, `staff_costs`, `staff_costs_exceptional`, `staff_severance_disclosed`, `net_result`, `net_result_attributable_parent`, `amortisation_player_registrations`, `impairment_player_registrations`, `profit_on_player_disposals` y `player_trading_other_income`.
+- **Balance al cierre:** `borrowings`, `lease_liabilities`, `transfer_payables` y `transfer_receivables`, cada uno con su parte `_current` y `_non_current`, y `cash`.
+- **Cotizados:** `shares_outstanding`.
+
+Columnas añadidas a las de la tabla: `value_full` (la cifra en unidades completas), `fx_source_file` y `fx_note` (qué tipos y cuántos días), `components`, `column`, `crop`, `extraction_method`, `ocr_note`, `is_derived`, `included_in_staff_costs` y `definition_note`.
+
+Tablas de apoyo: `dim_club` (de `clubs.yaml`), `fx_rates` (BCE), `market_prices` (yfinance) y `line_item_map` (de `line_items.yaml`).
 
 Convenciones:
 
 - **Temporada = año fiscal que cierra en ella.** Un cierre a 30/06/2025 o a 31/05/2025 es `2024/25`. Arsenal y Liverpool cierran el 31 de mayo; el resto de clubes comprobados, el 30 de junio.
 - **EUR con tipos de referencia del BCE** (serie `EXR.D.GBP.EUR.SP00.A` y equivalentes). Cuenta de resultados: media de los tipos diarios del año fiscal. Balance: tipo del día de cierre o el último anterior. Precios de mercado: tipo del mismo día. El BCE publica GBP por 1 EUR, así que se divide.
+  - **Precisión, fijada en la fase 3b:** la media es aritmética, sobre los tipos que el BCE publica entre el día siguiente al cierre anterior y el cierre, y se redondea a 6 decimales. El tipo de cierre se usa tal cual (4 o 5 decimales). `value_eur` = `value_full` / `fx_rate`, redondeado al euro, mitad hacia arriba: se puede recalcular con las columnas de la propia tabla.
+  - **`fx_method`:** `average_fiscal_year` (cuenta de resultados), `closing` (balance), `none_eur` (la cifra ya está en EUR: tipo 1) o `not_monetary` (acciones: sin tipo ni `value_eur`). `fx_date` es el año fiscal de la media (`2024-07-01/2025-06-30`) o el día del tipo de cierre (Arsenal y Liverpool cierran el sábado 31/05/2025 y usan el 30/05/2025).
+  - **Un tipo que falta es un error:** si hay más de 5 días naturales seguidos sin tipo, no se interpola. Los tipos se descargan con `download-fx` a `data/raw/ecb/`, con su entrada en el manifiesto; el CI usa un CSV sintético con el mismo formato.
 - **Unidades:** todo pasa a unidades monetarias completas antes de convertir, porque los informes vienen en miles o en millones.
 - **`value_reported` es la cifra tal como la da el informe,** en su unidad: en miles si el informe va en miles, y en unidades si va en unidades, como el iXBRL de Lazio (146.041.028 euros). Se guarda exacta, sin redondear. Las tablas de revisión la muestran en miles redondeados.
+  - Una cifra publicada con decimales queda en la unidad de su último decimal, para que siga siendo entera y los cuadres sigan en esa unidad: «£210.8 million» son 2.108 centenas de miles (`hundred_thousands`) y «(0,58)» millones, 58 decenas de miles (`ten_thousands`).
+  - Las acciones van en `shares`, o en `thousand_shares` si el informe las da en miles (Celtic).
 - **Tolerancia de los cuadres, decidida el 27/09/2026 para todos los clubes:**
   - Tolerancia = max(1, floor(0,5 × número de filas sumadas)), en la unidad del documento, porque cada fila redondeada puede desviarse ±0,5. Por ejemplo, 1 con 2 o 3 filas y 4 con 8 o 9 filas.
   - Una igualdad entre dos celdas (el total de una nota y su línea en la cuenta, o la fuente y su control) cuenta como una fila: tolerancia 1.
   - Un cuadre que pasa con diferencia distinta de 0 lleva la marca "redondeo" y el número de filas. Las tablas dicen cuántos cuadres pasan por redondeo.
 - **Reexpresiones:** la cifra de cada año sale de su propio informe. La comparativa del año siguiente sirve de control y se marca si difiere más de un 1%.
-- **Validación con pandera:** tipos, lista cerrada de conceptos, clave única, fuente obligatoria cuando hay valor, motivo obligatorio cuando hay hueco y cuadre de las partidas de ingresos con el total, con tolerancia de redondeo.
-- **Almacenamiento:** parquet en `data/processed/` y un `football.duckdb` que lee el dashboard.
+- **Validación con pandera:** tipos, lista cerrada de conceptos, clave única, fuente obligatoria cuando hay valor, motivo obligatorio cuando hay hueco y cuadre de las partidas de ingresos con el total, con tolerancia de redondeo. En `fact_financials`, además: un hueco va sin valor, `fx_method` corresponde al tipo de concepto y `value_eur` es `value_full` / `fx_rate` redondeado al euro.
+- **Almacenamiento:** parquet en `data/processed/` y un `football.duckdb` que lee el dashboard. Los escribe `python -m pitch_to_balance_sheet facts` con DuckDB, a partir de las cifras de `extract`: `data/processed/fact_financials.parquet` y la tabla `fact_financials` de `data/processed/football.duckdb`, en la que se sustituyen las filas de la temporada. Si un club de la extracción está en error, falta un tipo o no pasa pandera, no se escribe nada.
 
 ## 6. Clubes cotizados
 
@@ -260,6 +273,21 @@ Cinco métricas por club y temporada, y una valoración por EV/ingresos que da u
 - **`impairment_player_registrations`:** su deterioro. Si el club no lo separa, es hueco con motivo.
 - **`profit_on_player_disposals`:** el beneficio neto por la venta de derechos de jugadores, tal como lo publica el club (plusvalías menos minusvalías y, según el club, costes de venta). No incluye cesiones ni otros ingresos de jugadores.
 - **`player_trading_other_income`** (decidido el 27/09/2026): cesiones, sell-on fees y bonus que el club no incluye en `profit_on_player_disposals`. No entra en los ingresos; entrará en el denominador del SCR aproximado, en el promedio de tres años junto al resultado por traspasos. Es hueco si el club no lo publica por separado.
+
+**Balance al cierre y acciones (fase 3b, 28/09/2026; definiciones pendientes del OK del usuario):**
+
+- **`borrowings`, deuda financiera:** préstamos bancarios, bonos y obligaciones, descubiertos y otros préstamos que el club presenta como deuda financiera, con los intereses devengados si van en la misma línea. Entran:
+  - los anticipos de factoring o de cesión de créditos cuando el club los presenta como deuda financiera o como préstamos (Juventus, Porto y Lazio); si los presenta en otra línea, no (la cesión de créditos de Benfica, en outros passivos), anotado;
+  - los préstamos de accionistas o de sociedades del grupo cuando el informe los llama préstamo (Arsenal, de KSE UK; Liverpool, de FSG);
+  - la parte de deuda de instrumentos compuestos (las acciones preferentes convertibles de Celtic).
+  - No entran: los arrendamientos (van en `lease_liabilities`), los derivados, los warrants a valor razonable (Tottenham) ni los saldos con el grupo que el informe no presenta como préstamo (Manchester City), anotado.
+- **`lease_liabilities`:** pasivos por arrendamiento (NIIF 16). En FRS 102 los arrendamientos operativos no van al balance: la cifra es 0 y no es comparable, anotado (Arsenal, Chelsea, Liverpool y Newcastle).
+- **`cash`:** efectivo y equivalentes del balance; no incluye otros activos financieros.
+- **`transfer_payables` y `transfer_receivables`:** saldos con clubes (y con la liga cuando es ella la que liquida los traspasos, como la Lega en Lazio) por la compra y la venta de derechos de jugadores. Valor contable, neto de actualización financiera, cuando la nota permite aislarlo; si no, el nominal de la nota, anotado. Si el club no los separa de los deudores y acreedores comerciales, son hueco.
+- **Corriente y no corriente:** `_current` y `_non_current`, si el club los separa; si no, hueco con motivo. El total es la cifra publicada si la hay (cuadrada con sus partes) o su suma, derivada.
+- **Una partida que el balance no tiene** vale 0, derivado, como en el reparto de ingresos: el total del bloque menos todas sus líneas (del balance o de la nota que las desglosa), que tiene que dar exactamente 0; si no, error.
+- **`shares_outstanding`:** acciones emitidas al cierre de todas las clases con los mismos derechos económicos que las que cotizan, menos las acciones propias, del propio informe (Manchester United: clases A y B; Benfica y Porto: categorías A y B). Las preferentes convertibles no entran (Celtic), anotado.
+- **Deuda neta**, en la tabla resumen de la fase 3b: `borrowings` + `lease_liabilities` − `cash`; la variante suma `transfer_payables` y resta `transfer_receivables`. Si falta un componente, es hueco, y la tabla dice cuál. En EUR, con el tipo de cierre.
 
 **Resultado neto, decidido el 27/09/2026:** `net_result` es el resultado consolidado total, con los minoritarios. `net_result_attributable_parent`, lo atribuible a la matriz, es informativo y se guarda en los clubes que lo publican.
 

@@ -15,18 +15,27 @@ Fase 3a:
 - pág. 38, nota 10, Intangible fixed assets de 2025: el bloque "Amortisation and impairment",
   columna Player registrations. No tiene línea de deterioro en 2025; la pág. 39 lo dice en una
   frase: "impaired by £nil (2024: £1,770,000)".
+
+Fase 3b, balance al 30/06/2025:
+- pág. 24, Consolidated balance sheet.
+- pág. 40, nota 13 (con una frase sobre los saldos por traspasos dentro de trade receivables)
+  y nota 14 (caja).
+- pág. 41, nota 15, y pág. 42, nota 16: pasivos corrientes y no corrientes, con los préstamos,
+  los arrendamientos y los trade payables por traspasos (una frase en la 15; en la 16, todos).
 """
 
-from pitch_to_balance_sheet.extract import mix
+from pitch_to_balance_sheet.extract import balance, mix
 from pitch_to_balance_sheet.extract.statements import (
     ClubSpec,
     Cross,
     DocumentSpec,
     FigureSpec,
     Link,
+    Part,
     SentenceFigureSpec,
     Sum,
     TableSpec,
+    TextCellSpec,
 )
 from pitch_to_balance_sheet.extract.tables import THOUSANDS_EVIDENCE
 
@@ -86,6 +95,52 @@ PLAYER_OTHER_INCOME_GAP = (
 )
 
 
+YEARS = ("2025", "2024")
+BS_CURRENT = {
+    "borrowings": r"^interest-bearing loans and borrowings$",
+    "payables": r"^trade and other payables$", "fvtpl": r"^fvtpl liabilities$",
+    "provisions": r"^provisions",
+}
+BS_NONCURRENT = {
+    "borrowings": r"^interest-bearing loans and borrowings$",
+    "payables": r"^trade and other payables$", "grant": r"^deferred grant income$",
+    "provisions": r"^provisions",
+}
+PAYABLES = ("trade", "tax", "leases", "other", "accruals", "deferred_income")
+NOTE15_ROWS = {
+    "other_loans": r"^other loans \(secured\)$",
+    "borrowings": r"^interest-bearing loans and borrowings$",
+    "trade": r"^trade payables due in less than one year$",
+    "tax": r"^other tax and social security$", "leases": r"^lease liabilities$",
+    "other": r"^other payables$", "accruals": r"^accruals$",
+    "deferred_income": r"^deferred income$", "payables": r"^trade and other payables$",
+    "fvtpl": r"^fvtpl liabilities$", "provisions": r"^provisions",
+}
+NOTE16_ROWS = {
+    "bank": r"^bank loans \(secured\)$", "other_loans": r"^other loans \(secured\)$",
+    "borrowings": r"^interest-bearing loans and borrowings$",
+    "trade": r"^trade payables due in more than one year$",
+    "deferred_income": r"^deferred income$", "leases": r"^lease liabilities$",
+    "other": r"^other payables$", "payables": r"^trade and other payables$",
+    "grant": r"^deferred grant income$", "provisions": r"^provisions",
+}
+BORROWINGS_NOTE = (
+    "Interest-bearing loans and borrowings (notas 15 y 16): la financiación del estadio (bonos "
+    "colocados en privado con inversores de EE. UU. y el préstamo de Bank of America Merrill "
+    "Lynch), neta de costes. Quedan fuera las FVTPL liabilities (52.066): los warrants de ENIC, "
+    "que la nota 15 considera en sustancia patrimonio."
+)
+TRANSFER_NOTE = (
+    "Trade payables por la adquisición de registros de jugadores: a menos de un año, la frase de "
+    "la nota 15 (134.550.000 libras); a más de un año, todos los trade payables, según la nota "
+    "16."
+)
+RECEIVABLES_NOTE = (
+    "Trade receivables por la venta de registros de jugadores (nota 13, en una frase, en libras): "
+    "61.221.000 en total, de los que 41.533.000 vencen a más de un año, que son todos los trade "
+    "receivables a más de un año del balance. La parte corriente es la diferencia."
+)
+
 SPEC = ClubSpec(
     club_id="tottenham",
     currency="GBP",
@@ -133,11 +188,58 @@ SPEC = ClubSpec(
                       Sum("closing", ("opening", "charge"), ("software",))),
                 cross=(Cross("total", ("players", "software"), ("opening", "charge", "closing")),),
             ),
+            # Fase 3b: balance y notas 13 a 16.
+            TableSpec("bs_assets", 24, YEARS,
+                      {"trade_receivables_noncurrent": r"^trade receivables due after one year$",
+                       "cash": r"^cash and cash equivalents$"}),
+            TableSpec("bs_current_liabilities", 24, YEARS, BS_CURRENT,
+                      totals_after={"total": "provisions"},
+                      block=(r"^current liabilities$", r"^non-current liabilities$"),
+                      sums=(Sum("total", tuple(BS_CURRENT)),)),
+            TableSpec("bs_noncurrent_liabilities", 24, YEARS, BS_NONCURRENT,
+                      totals_after={"total": "provisions"},
+                      block=(r"^non-current liabilities$", r"^total liabilities$"),
+                      sums=(Sum("total", tuple(BS_NONCURRENT)),)),
+            TableSpec("cash", 40, YEARS,
+                      {"bank": r"^bank balances$", "in_hand": r"^cash in hand$",
+                       "total": r"^cash and cash equivalents$"},
+                      select=r"^bank balances$", sums=(Sum("total", ("bank", "in_hand")),)),
+            # En 2024 no había préstamos a menos de un año: sus celdas son un guion.
+            TableSpec("note15", 41, YEARS, NOTE15_ROWS, select=r"^other loans \(secured\)$",
+                      totals_after={"total": "provisions"},
+                      sums=(Sum("borrowings", ("other_loans",)), Sum("payables", PAYABLES),
+                            Sum("total", ("borrowings", "payables", "fvtpl", "provisions")))),
+            TableSpec("note16", 42, YEARS, NOTE16_ROWS, select=r"^bank loans \(secured\)$",
+                      totals_after={"total": "provisions"},
+                      sums=(Sum("borrowings", ("bank", "other_loans")),
+                            Sum("payables", ("trade", "deferred_income", "leases", "other")),
+                            Sum("total", ("borrowings", "payables", "grant", "provisions")))),
         ),
         links=(
             Link(("revenue", "revenue", "2025"), ("pnl", "revenue", "total_2025")),
             Link(("revenue", "revenue", "2024"), ("pnl", "revenue", "total_2024")),
             MIX.check(),
+            # Balance: las notas son sus líneas del balance, que van en negativo.
+            *(Link((note, row, "2025"), (table, row, "2025"), sign=-1)
+              for note, table in (("note15", "bs_current_liabilities"),
+                                  ("note16", "bs_noncurrent_liabilities"))
+              for row in ("borrowings", "payables", "provisions", "total")),
+            Link(("cash", "total", "2025"), ("bs_assets", "cash", "2025")),
+            Link(("receivables", "non_current", "2025"),
+                 ("bs_assets", "trade_receivables_noncurrent", "2025")),
+        ),
+        text_cells=(
+            TextCellSpec("receivables", "total", 40, "Trade receivables above include",
+                         r"include £(?P<amount>[\d,]+) \(2024: £58,132,000\) in respect of the "
+                         r"disposal", scale=1000),
+            # El OCR lee la £ de esta línea como €.
+            TextCellSpec("receivables", "non_current", 40, "due after more than one year",
+                         r"^[£€](?P<amount>[\d,]+) is due after more than one year \(2024: "
+                         r"[£€]6,845,000\)", scale=1000),
+            TextCellSpec("payables_note", "transfers_current", 41,
+                         "Trade payables above include",
+                         r"include £(?P<amount>[\d,]+) in respect of the acquisition of "
+                         r"players' registrations \(2024: £145,979,000\)", scale=1000),
         ),
         gaps={**MIX.gaps(), "player_trading_other_income": PLAYER_OTHER_INCOME_GAP},
         figures=(
@@ -154,6 +256,21 @@ SPEC = ClubSpec(
                        "total_2025",
                        note="Profit on disposal of intangible fixed assets: en 2025 solo hay "
                             "bajas de derechos de jugadores; el software no tiene (nota 10)."),
+            # Balance al 30/06/2025.
+            FigureSpec("cash", (("bs_assets", "cash"),), "2025",
+                       note="Cash and cash equivalents (pág. 24, nota 14)."),
+            *balance.split("borrowings", Part("note15", "borrowings"),
+                           Part("note16", "borrowings"), "2025", note=BORROWINGS_NOTE),
+            *balance.split("lease_liabilities", Part("note15", "leases"),
+                           Part("note16", "leases"), "2025",
+                           note="Lease liabilities (notas 15 y 16)."),
+            *balance.split("transfer_payables", Part("payables_note", "transfers_current"),
+                           Part("note16", "trade"), "2025", note=TRANSFER_NOTE),
+            *balance.split("transfer_receivables",
+                           (Part("receivables", "total"),
+                            Part("receivables", "non_current", sign=-1)),
+                           Part("receivables", "non_current"), "2025",
+                           total=Part("receivables", "total"), note=RECEIVABLES_NOTE),
         ),
         sentences=(
             SentenceFigureSpec(

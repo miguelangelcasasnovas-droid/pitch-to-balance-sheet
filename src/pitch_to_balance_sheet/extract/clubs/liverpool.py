@@ -14,15 +14,25 @@ Fase 3a, en los dos documentos:
 - pág. 19, estado de flujos: "Depreciation, amortisation and impairment" es la suma de las tres
   líneas de la nota 3 (en 2025; la de 2024 lleva además un deterioro de inmovilizado material que
   el OCR del escaneo no lee), y "Profit on disposal of registrations" es la línea de la cuenta.
+
+Fase 3b, balance al 31/05/2025 (grupo), en los dos documentos:
+- pág. 15, Consolidated Balance Sheet: dos columnas por año, las partidas en la interior y los
+  subtotales en la exterior.
+- pág. 32, notas 13 y 14: acreedores a menos y a más de un año, con el grupo y la sociedad.
+- pág. 33, nota 15: el préstamo de la matriz (FSG) y los préstamos bancarios.
+El OCR lee las cabeceras £000 de estas páginas también como 2000, 5000 o $000. Liverpool no
+separa los saldos por traspasos (van dentro de trade debtors y trade creditors). FRS 102: sin
+pasivos por arrendamiento.
 """
 
-from pitch_to_balance_sheet.extract import mix
+from pitch_to_balance_sheet.extract import balance, mix
 from pitch_to_balance_sheet.extract.statements import (
     ClubSpec,
     DocumentSpec,
     FigureSpec,
     Link,
     LinkSum,
+    Part,
     Sum,
     TableSpec,
 )
@@ -69,6 +79,39 @@ CASHFLOW_ROWS = {
     "profit_disposals": r"^profit on disposal of registrations$",
 }
 MIX = mix.for_club("liverpool")
+BALANCE_HEADER = r"^[£€$25]000$"  # £000, que el OCR lee también como 2000, 5000, €000 o $000
+BALANCE_COLUMNS = ("inner_2025", "outer_2025", "inner_2024", "outer_2024")
+GROUP_COMPANY = ("group_2025", "group_2024", "company_2025", "company_2024")
+GROUP = GROUP_COMPANY[:2]
+BALANCE_ROWS = {
+    "cash": r"^cash at bank and in hand$",
+    "creditors_current": r"^creditors amounts falling due within one year$",
+    "creditors_noncurrent": r"^creditors amounts falling due after more than$",
+}
+CREDITORS_CURRENT = ("trade", "parent", "tax", "corporation_tax", "other", "accruals",
+                     "deferred_income")
+CREDITORS_CURRENT_ANCHORS = {"trade": r"^trade creditors$", "parent": r"^amounts owed to parent$",
+                             "deferred_income": r"^deferred income$"}
+# La última fila con cifras es el número de página impreso (30), al pie.
+CREDITORS_NONCURRENT = ("bank", "trade", "group", "other", "total", "page_number")
+CREDITORS_NONCURRENT_ANCHORS = {"bank": r"^bank loans and overdrafts",
+                                "trade": r"^trade creditors$", "other": r"^other creditors$"}
+LOANS_ROWS = {"intercompany": r"^intercompany loan$", "secured": r"^secured bank loans$",
+              "costs": r"^less deferred loan costs$"}
+BORROWINGS_NOTE = (
+    "Interest-bearing loans and borrowings (nota 15): el préstamo de FSG Football Group, LLC "
+    "(sin interés y exigible a la vista, a menos de un año: la nota lo llama intercompany loan y "
+    "lo incluye en loans and borrowings) y los préstamos bancarios con garantía, netos de "
+    "costes, a más de un año."
+)
+LEASE_NOTE = (
+    "0, derivado: las notas 13 y 14 no tienen pasivos por arrendamiento (el total de cada una "
+    "menos todas sus líneas del grupo). " + balance.FRS102_LEASES
+)
+TRANSFER_GAP = (
+    "no se publica: Liverpool no separa los saldos por traspasos, que van dentro de trade "
+    "debtors y trade creditors (notas 12 a 14)"
+)
 
 
 def document(control_index: int | None) -> DocumentSpec:
@@ -110,6 +153,21 @@ def document(control_index: int | None) -> DocumentSpec:
                 "cashflow", 19, COLUMNS, CASHFLOW_ROWS, header=YEARS_HEADER,
                 select=CASHFLOW_ROWS["dai"],
             ),
+            # Fase 3b: balance y notas 13 a 15.
+            TableSpec("bs", 15, BALANCE_COLUMNS, BALANCE_ROWS, header=BALANCE_HEADER),
+            TableSpec("creditors_current", 32, GROUP_COMPANY, {}, header=BALANCE_HEADER,
+                      select=r"^amounts owed to parent$",
+                      # En la web, las rayas encima y debajo del total se leen como guiones.
+                      rows_by_order=(*CREDITORS_CURRENT, "total"), drop_rules=True,
+                      anchors=CREDITORS_CURRENT_ANCHORS,
+                      sums=(Sum("total", CREDITORS_CURRENT, GROUP),)),
+            TableSpec("creditors_noncurrent", 32, GROUP_COMPANY, {}, header=BALANCE_HEADER,
+                      select=r"^bank loans and overdrafts", rows_by_order=CREDITORS_NONCURRENT,
+                      anchors=CREDITORS_NONCURRENT_ANCHORS,
+                      sums=(Sum("total", ("bank", "trade", "other"), GROUP),)),
+            TableSpec("loans", 33, GROUP_COMPANY, LOANS_ROWS, header=BALANCE_HEADER,
+                      select=r"^intercompany loan$", totals_after={"bank_total": "costs"},
+                      sums=(Sum("bank_total", ("secured", "costs"), GROUP),)),
         ),
         links=(
             *(Link(("turnover", "total", year), ("pnl", "turnover", year)) for year in COLUMNS),
@@ -118,8 +176,20 @@ def document(control_index: int | None) -> DocumentSpec:
             LinkSum(("cashflow", "dai", "2025"),
                     tuple(("admin", row, "2025") for row in ADMIN_ROWS)),
             MIX.check(),
+            # Balance: las notas son sus líneas del balance (en negativo), y la nota 15, las de
+            # préstamos de las notas 13 y 14.
+            Link(("creditors_current", "total", "group_2025"),
+                 ("bs", "creditors_current", "inner_2025"), sign=-1),
+            Link(("creditors_noncurrent", "total", "group_2025"),
+                 ("bs", "creditors_noncurrent", "outer_2025"), sign=-1),
+            *(Link(("loans", "intercompany", column), ("creditors_current", "parent", column))
+              for column in GROUP),
+            *(Link(("loans", "bank_total", column), ("creditors_noncurrent", "bank", column))
+              for column in GROUP),
         ),
-        gaps={**MIX.gaps(), "player_trading_other_income": PLAYER_OTHER_INCOME_GAP},
+        gaps={**MIX.gaps(), "player_trading_other_income": PLAYER_OTHER_INCOME_GAP,
+              **balance.gaps("transfer_payables", TRANSFER_GAP),
+              **balance.gaps("transfer_receivables", TRANSFER_GAP)},
         figures=(
             FigureSpec("revenue_total_reported", (("pnl", "turnover"),), "2025"),
             FigureSpec("revenue_ex_player_trading", (("pnl", "turnover"),), "2025",
@@ -133,6 +203,16 @@ def document(control_index: int | None) -> DocumentSpec:
                        note="Impairment loss on registrations (nota 3)."),
             FigureSpec("profit_on_player_disposals", (("pnl", "profit_disposal_players"),),
                        "2025", note="Profit on disposal of registrations."),
+            # Balance al 31/05/2025, columna del grupo.
+            FigureSpec("cash", (("bs", "cash", "inner_2025"),), "inner_2025",
+                       note="Cash at bank and in hand (pág. 15)."),
+            *balance.split("borrowings", Part("loans", "intercompany"),
+                           Part("loans", "bank_total"), "group_2025", note=BORROWINGS_NOTE),
+            *balance.zero_from_lines(
+                "lease_liabilities",
+                (("creditors_current", "total", CREDITORS_CURRENT),
+                 ("creditors_noncurrent", "total", ("bank", "trade", "other"))),
+                "group_2025", LEASE_NOTE),
         ),
     )
 

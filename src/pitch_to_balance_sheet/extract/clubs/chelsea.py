@@ -11,9 +11,16 @@ Fase 3a:
   ingresos (mapeo en config/line_items.yaml).
 - pág. 37 (34 impresa), nota 14, Intangible fixed assets del grupo: el bloque "Amortisation and
   impairment", columna Player registrations. El software no tiene deterioro (celda en blanco).
+
+Fase 3b, balance al 30/06/2025 (grupo):
+- pág. 19 (16 impresa), Group balance sheet: dos columnas por año, las partidas en la interior
+  y los subtotales en la exterior.
+- pág. 42 (39 impresa), notas 22 y 23: acreedores a menos y a más de un año, con el grupo y la
+  sociedad. Ninguna tiene deuda financiera ni arrendamientos (FRS 102), y Chelsea no separa
+  los saldos por traspasos, que van dentro de trade debtors y trade creditors.
 """
 
-from pitch_to_balance_sheet.extract import mix
+from pitch_to_balance_sheet.extract import balance, mix
 from pitch_to_balance_sheet.extract.statements import (
     ClubSpec,
     Cross,
@@ -79,6 +86,33 @@ PLAYER_OTHER_INCOME_GAP = (
 )
 
 
+BALANCE_COLUMNS = ("inner_2025", "outer_2025", "inner_2024", "outer_2024")
+GROUP_COMPANY = ("group_2025", "group_2024", "company_2025", "company_2024")
+GROUP = GROUP_COMPANY[:2]
+BALANCE_ROWS = {
+    "cash": r"^cash at bank and in hand$",
+    "creditors_current": r"^creditors amounts falling due within one year$",
+    "creditors_noncurrent": r"^creditors amounts falling due after more than one year$",
+}
+CREDITORS_CURRENT = {
+    "trade": r"^trade creditors$", "group": r"^amounts owed to group undertakings$",
+    "corporation_tax": r"^corporation tax payable$",
+    "tax": r"^other taxation and social security$", "other": r"^other creditors$",
+    "accruals": r"^accruals and deferred income$",
+}
+CREDITORS_NONCURRENT = {"trade": r"^trade creditors$",
+                        "accruals": r"^accruals and deferred income$"}
+ZERO_NOTE = (
+    "0, derivado: los acreedores del grupo de las notas 22 y 23 no tienen préstamos ni "
+    "arrendamientos (el total de cada nota menos todas sus líneas). Los importes con sociedades "
+    "del grupo, sin interés y exigibles a la vista (nota 22), son 0 a 30/06/2025 (303.196 en "
+    "2024)."
+)
+TRANSFER_GAP = (
+    "no se publica: Chelsea no separa los saldos por traspasos, que van dentro de trade debtors "
+    "y trade creditors (notas 21 a 23)"
+)
+
 SPEC = ClubSpec(
     club_id="chelsea",
     currency="GBP",
@@ -133,6 +167,15 @@ SPEC = ClubSpec(
                 cross=(Cross("total", ("software", "players"),
                              ("opening", "charge", "disposals", "closing")),),
             ),
+            # Fase 3b: balance y notas 22 y 23.
+            TableSpec("bs", 19, BALANCE_COLUMNS, BALANCE_ROWS),
+            TableSpec("creditors_current", 42, GROUP_COMPANY, CREDITORS_CURRENT,
+                      select=r"^corporation tax payable$", totals_after={"total": "accruals"},
+                      sums=(Sum("total", tuple(CREDITORS_CURRENT), GROUP),)),
+            TableSpec("creditors_noncurrent", 42, GROUP_COMPANY, CREDITORS_NONCURRENT,
+                      select=r"^the accruals and deferred income balance represent",
+                      totals_after={"total": "accruals"},
+                      sums=(Sum("total", tuple(CREDITORS_NONCURRENT), GROUP),)),
         ),
         links=(
             Link(("turnover", "total", "2025"), ("pnl", "turnover", "total_2025")),
@@ -140,8 +183,15 @@ SPEC = ClubSpec(
             # El deterioro es todo de jugadores: el software no tiene.
             Link(("intangibles", "impairment", "players"), ("intangibles", "impairment", "total")),
             MIX.check(),
+            # Cada nota de acreedores es su línea del balance, en negativo.
+            Link(("creditors_current", "total", "group_2025"),
+                 ("bs", "creditors_current", "inner_2025"), sign=-1),
+            Link(("creditors_noncurrent", "total", "group_2025"),
+                 ("bs", "creditors_noncurrent", "outer_2025"), sign=-1),
         ),
-        gaps={**MIX.gaps(), "player_trading_other_income": PLAYER_OTHER_INCOME_GAP},
+        gaps={**MIX.gaps(), "player_trading_other_income": PLAYER_OTHER_INCOME_GAP,
+              **balance.gaps("transfer_payables", TRANSFER_GAP),
+              **balance.gaps("transfer_receivables", TRANSFER_GAP)},
         figures=(
             FigureSpec("revenue_total_reported", (("pnl", "turnover"),), "total_2025"),
             FigureSpec("revenue_ex_player_trading", (("pnl", "turnover"),), "total_2025",
@@ -158,6 +208,19 @@ SPEC = ClubSpec(
                             "llama impairment of player registrations (12,1 millones)."),
             FigureSpec("profit_on_player_disposals", (("pnl", "profit_disposal_players"),),
                        "total_2025", note="Profit on disposal of player registrations."),
+            # Balance al 30/06/2025, columna del grupo.
+            FigureSpec("cash", (("bs", "cash", "inner_2025"),), "inner_2025",
+                       note="Cash at bank and in hand (pág. 19)."),
+            *balance.zero_from_lines(
+                "borrowings",
+                (("creditors_current", "total", tuple(CREDITORS_CURRENT)),
+                 ("creditors_noncurrent", "total", tuple(CREDITORS_NONCURRENT))),
+                "group_2025", ZERO_NOTE),
+            *balance.zero_from_lines(
+                "lease_liabilities",
+                (("creditors_current", "total", tuple(CREDITORS_CURRENT)),
+                 ("creditors_noncurrent", "total", tuple(CREDITORS_NONCURRENT))),
+                "group_2025", ZERO_NOTE + " " + balance.FRS102_LEASES),
         ),
     ),
 )

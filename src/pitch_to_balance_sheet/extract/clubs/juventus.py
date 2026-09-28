@@ -22,20 +22,37 @@ profit_on_player_disposals = plusvalenze − minusvalenze de las notas 35 y 42.
 - pág. 174, mitad izquierda, nota 36, altri ricavi e proventi: las iniziative commerciali van a
   commercial y el resto a other (decisión del usuario del 27/09/2026).
 player_trading_other_income = cesiones temporales + altri ricavi (sell-on y bonus) de la nota 35.
+
+Fase 3b, balance al 30/06/2025:
+- pág. 148: situazione patrimoniale-finanziaria consolidata, activo en la mitad izquierda y
+  pasivo en la derecha. Los totales del pasivo están en negrita y el texto del PDF los duplica
+  letra a letra, así que no se leen: los préstamos se cuadran con la nota 25.
+- pág. 170, mitad izquierda, nota 25: prestiti e altri debiti finanziari, corrientes y no
+  corrientes, con las passività IFRS 16 (arrendamientos) en su propia fila.
+- pág. 169: el número de acciones, en el texto de la nota 23.
 """
 
-from pitch_to_balance_sheet.extract import mix
+from pitch_to_balance_sheet.extract import balance, mix
 from pitch_to_balance_sheet.extract.statements import (
     ClubSpec,
     DocumentSpec,
     FigureSpec,
     Link,
     Part,
+    SentenceFigureSpec,
     Sum,
     TableSpec,
 )
 
 LEFT_HALF = (0.0, 0.0, 0.5, 1.0)
+RIGHT_HALF = (0.5, 0.0, 1.0, 1.0)
+NOTE25_COLUMNS = ("current_2025", "non_current_2025", "current_2024", "non_current_2024")
+BORROWINGS_NOTE = (
+    "Prestiti e altri debiti finanziari (nota 25) sin las passività IFRS 16: anticipos de "
+    "sociedades de factoring (244.776 en total), la hipoteca de la sede y el Training Center "
+    "Continassa, préstamos bancarios y el préstamo del Istituto per il Credito Sportivo. El "
+    "propio club presenta los anticipos de factoring como deuda financiera."
+)
 # Notas de la pág. 175 sin la columna de variación: sus cifras acaban en el 43,6% y el 93,7%
 # del ancho, y las de 2023/2024, en el 38,1% y el 88,2%.
 NOTE40_REGION = (0.0, 0.0, 0.39, 1.0)
@@ -210,6 +227,57 @@ def document(language: str, control_index: int | None) -> DocumentSpec:
         "total": (r"^ammortamenti e svalutazioni diritti calciatori$" if italian
                   else r"^amortisation and write-downs of players registration rights$"),
     }
+    balance_header = r"^30/06/20\d\d$" if italian else r"^20\d\d$"
+    noncurrent_assets = {
+        "players": (r"^diritti pluriennali alle prestazioni dei calciatori, netti$" if italian
+                    else r"^players registration rights, net$"),
+        "goodwill": r"^avviamento$" if italian else r"^goodwill$",
+        "other_intangibles": (r"^altre attivita immateriali$" if italian
+                              else r"^other intangible assets$"),
+        "intangibles_in_progress": (r"^immobilizzazioni immateriali in corso" if italian
+                                    else r"^intangible assets in progress"),
+        "land": r"^terreni e fabbricati$" if italian else r"^land and buildings$",
+        "other_tangibles": (r"^altre attivita materiali$" if italian
+                            else r"^other tangible assets$"),
+        "tangibles_in_progress": (r"^immobilizzazioni materiali in corso" if italian
+                                  else r"^tangible assets in progress"),
+        "investments": r"^partecipazioni$" if italian else r"^equity investments$",
+        "financial": (r"^attivita finanziarie non correnti$" if italian
+                      else r"^non-current financial assets$"),
+        "deferred_tax": r"^imposte differite attive$" if italian else r"^deferred tax assets$",
+        "transfers": (r"^crediti verso societa calcistiche per campagne trasferimenti$" if italian
+                      else r"^receivables from football clubs for transfer campaigns$"),
+        "other": r"^altre attivita non correnti$" if italian else r"^other non-current assets$",
+        "advances": (r"^anticipi versati non correnti$" if italian
+                     else r"^non-current advances paid$"),
+        "total": (r"^totale attivita non correnti$" if italian
+                  else r"^total non-current assets$"),
+    }
+    current_assets = {
+        "inventories": r"^rimanenze$" if italian else r"^inventories$",
+        "trade": r"^crediti commerciali$" if italian else r"^trade receivables$",
+        "related": (r"^crediti commerciali e altri crediti verso parti correlate$" if italian
+                    else r"^trade and other receivables from related parties$"),
+        "transfers": noncurrent_assets["transfers"],
+        "other": r"^altre attivita correnti$" if italian else r"^other current assets$",
+        "financial": (r"^attivita finanziarie correnti$" if italian
+                      else r"^current financial assets$"),
+        "cash": r"^disponibilita liquide$" if italian else r"^cash and cash equivalents$",
+        "advances": (r"^anticipi versati correnti$" if italian
+                     else r"^current advances paid$"),
+        "total": r"^totale attivita correnti$" if italian else r"^total current assets$",
+    }
+    liabilities = {
+        "loans": (r"^prestiti e altri debiti finanziari$" if italian
+                  else r"^bank loans and other financial liabilities$"),
+        "transfers": (r"^debiti verso societa calcistiche per campagne trasferimenti$" if italian
+                      else r"^payables to football clubs related to transfer campaigns$"),
+    }
+    note25_rows = {
+        "leases": r"^passivita ifrs 16\b" if italian else r"^lease liabilities\b",
+        "total": (r"^prestiti ed altri debiti finanziari\b" if italian
+                  else r"^bank liabilities loans and other financial\b"),
+    }
     return DocumentSpec(
         method="text",
         unit_evidence=r"migliaia di euro" if italian else r"thousands of euro",
@@ -239,6 +307,35 @@ def document(language: str, control_index: int | None) -> DocumentSpec:
                       select=note44_rows["write_downs"],
                       sums=(Sum("amortisation", ("male", "youth", "female")),
                             Sum("total", ("amortisation", "write_downs")))),
+            # Fase 3b: balance y nota 25.
+            TableSpec("bs_noncurrent_assets", 148, YEARS, noncurrent_assets, region=LEFT_HALF,
+                      header=balance_header,
+                      block=(r"^attivita non correnti$" if italian else r"^non-current assets$",
+                             noncurrent_assets["total"]),
+                      sums=(Sum("total", tuple(noncurrent_assets)[:-1]),)),
+            TableSpec("bs_current_assets", 148, YEARS, current_assets, region=LEFT_HALF,
+                      header=balance_header,
+                      block=(r"^attivita correnti$" if italian else r"^current assets$",
+                             current_assets["total"]),
+                      sums=(Sum("total", tuple(current_assets)[:-1]),)),
+            TableSpec("bs_noncurrent_liabilities", 148, YEARS, liabilities, region=RIGHT_HALF,
+                      header=balance_header,
+                      block=(r"^passivita non correnti$" if italian
+                             else r"^non-current liabilities$",
+                             r"^totale passivita non correnti" if italian
+                             else r"^total non-current liabilities")),
+            TableSpec("bs_current_liabilities", 148, YEARS, liabilities, region=RIGHT_HALF,
+                      header=balance_header,
+                      block=(r"^passivita correnti$" if italian else r"^current liabilities$",
+                             r"^totale passivita correnti" if italian
+                             else r"^total current liabilities")),
+            TableSpec("note25", 170, NOTE25_COLUMNS, note25_rows, region=LEFT_HALF,
+                      header=r"^corrente$" if italian else r"^(current|non-current)$",
+                      select=note25_rows["leases"],
+                      # Debajo, en la misma columna, va el calendario de vencimientos, con las
+                      # mismas filas en otro orden.
+                      block=(r"^anticipi finanziari da societa di factoring" if italian
+                             else r"^advances from factoring companies", note25_rows["total"])),
         ),
         links=(
             *(Link((note, "total", year), ("pnl", line, year), sign=-1)
@@ -250,6 +347,11 @@ def document(language: str, control_index: int | None) -> DocumentSpec:
               for year in YEARS),
             *(Link(("note36", "total", year), ("pnl", "other_income", year)) for year in YEARS),
             MIX.check(),
+            # La nota 25 es la línea de préstamos del balance, corriente y no corriente.
+            *(Link(("note25", "total", f"{part}_{year}"), (table, "loans", year))
+              for part, table in (("current", "bs_current_liabilities"),
+                                  ("non_current", "bs_noncurrent_liabilities"))
+              for year in YEARS),
         ),
         gaps=MIX.gaps(),
         figures=(
@@ -281,6 +383,40 @@ def document(language: str, control_index: int | None) -> DocumentSpec:
                        note="Cesiones temporales (3.754) y altri ricavi: sell-on fees y bonus de "
                             "traspasos (16.101), de la nota 35. Fuera de "
                             "profit_on_player_disposals y de los ingresos."),
+            # Balance al 30/06/2025.
+            FigureSpec("cash", (("bs_current_assets", "cash"),), "2025",
+                       note="Disponibilità liquide (pág. 148, nota 22)."),
+            *balance.split(
+                "borrowings",
+                (Part("note25", "total", "current_2025"),
+                 Part("note25", "leases", "current_2025", sign=-1)),
+                (Part("note25", "total", "non_current_2025"),
+                 Part("note25", "leases", "non_current_2025", sign=-1)),
+                "2025", note=BORROWINGS_NOTE),
+            *balance.split("lease_liabilities", Part("note25", "leases", "current_2025"),
+                           Part("note25", "leases", "non_current_2025"), "2025",
+                           note="Passività IFRS 16 de la nota 25."),
+            *balance.split("transfer_payables", Part("bs_current_liabilities", "transfers"),
+                           Part("bs_noncurrent_liabilities", "transfers"), "2025",
+                           note="Debiti verso società calcistiche per campagne trasferimenti "
+                                "(pág. 148, nota 26)."),
+            *balance.split("transfer_receivables", Part("bs_current_assets", "transfers"),
+                           Part("bs_noncurrent_assets", "transfers"), "2025",
+                           note="Crediti verso società calcistiche per campagne trasferimenti "
+                                "(pág. 148, nota 17)."),
+        ),
+        sentences=(
+            SentenceFigureSpec(
+                "shares_outstanding", 169,
+                "azioni ordinarie" if italian else "ordinary shares",
+                (r"rappresentato da n\. (?P<amount>\d{1,3}(?:\.\d{3})+)" if italian
+                 else r"is made up of (?P<amount>\d{1,3}(?:,\d{3})+) ordinary"),
+                "2025", unit="shares",
+                note="Acciones ordinarias de la matriz al 30/06/2025 (nota 23): una sola clase, "
+                     "sin cambios en el año según la propia nota, que no menciona acciones "
+                     "propias. La nota 34 (pág. 179) da un número medio de acciones de "
+                     "280.715.880 en los dos ejercicios, que no casa con esto (ver "
+                     "docs/incoherencias-fuentes.md)."),
         ),
     )
 

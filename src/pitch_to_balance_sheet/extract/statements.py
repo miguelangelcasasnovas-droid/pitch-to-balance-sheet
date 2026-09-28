@@ -17,6 +17,7 @@ Reglas:
   etiqueta y su contexto; los cuadres usan los pesos del linkbase de cálculo del emisor.
 """
 
+import html
 import re
 from dataclasses import dataclass, field
 from decimal import Decimal
@@ -36,6 +37,7 @@ from pitch_to_balance_sheet.extract.tables import (
     in_region,
     normalize_label,
     parse_amount,
+    parse_decimal,
     read_tables,
 )
 
@@ -120,6 +122,9 @@ class TableSpec:
     # Tabla cuya página no dice la unidad: la confirma un cuadre que pase contra esta otra tabla,
     # que sí la dice. Si no hay ese cuadre, error.
     unit_from: str | None = None
+    # Quita las rayas de subtotal que el OCR lee como un guion: filas sin rótulo con un solo
+    # guion y nada más. No son cifras de la tabla.
+    drop_rules: bool = False
 
 
 @dataclass(frozen=True)
@@ -147,6 +152,8 @@ class FigureSpec:
     included_in_staff_costs: str = ""
     # Unidad de la cifra si no es la del club (p. ej. una nota en miles en un iXBRL en euros).
     unit: str | None = None
+    # Un 0 derivado (un total menos todas sus líneas): si no da exactamente 0, es un error.
+    expect_zero: bool = False
 
     def __post_init__(self):
         _check_included(self.concept, self.included_in_staff_costs)
@@ -175,6 +182,10 @@ class SentenceFigureSpec:
     image_reading: str | None = None
     note: str = ""
     included_in_staff_costs: str = ""
+    unit: str | None = None  # unidad de la cifra si no es la del club (p. ej. "shares")
+    # Decimales de la cifra ("£210.8 million": 1). El valor queda en la unidad del último
+    # decimal (2.108 décimas de millón, unit="hundred_thousands"): ver tables.parse_decimal.
+    decimals: int = 0
 
     def __post_init__(self):
         _check_included(self.concept, self.included_in_staff_costs)
@@ -194,6 +205,7 @@ class TextCellSpec:
     pattern: str
     column: str = "2025"
     scale: int = 1
+    decimals: int = 0  # como en SentenceFigureSpec
 
 
 def _check_included(concept: str, value: str) -> None:
@@ -240,6 +252,9 @@ class XhtmlTableSpec:
     block: tuple | None = None  # como en TableSpec
     sums: tuple[Sum, ...] = ()
     thousands: str = "."
+    # Decimales de las cifras (p. ej. una tabla en millones con dos decimales): el valor queda en
+    # la unidad del último decimal, como en SentenceFigureSpec.
+    decimals: int = 0
 
 
 @dataclass(frozen=True)
@@ -272,6 +287,10 @@ class IxbrlDocumentSpec:
     gaps: dict[str, str] = field(default_factory=dict)
     tables: tuple[XhtmlTableSpec, ...] = ()  # notas sin etiquetar; partes: (tabla, fila)
     links: tuple[Link | LinkSum, ...] = ()
+    # Conceptos de balance: hechos de un instante (la fecha de cierre), no de un periodo.
+    instant_concepts: dict[str, str] = field(default_factory=dict)  # clave -> concepto iXBRL
+    instants: dict[str, str] = field(default_factory=dict)  # columna -> "2025-06-30"
+    thousands: str = "."  # separador de miles de las frases del XHTML
 
 
 @dataclass(frozen=True)
@@ -412,6 +431,10 @@ def ocr_note(amounts: tuple[Amount, ...], method: str) -> str:
     return f"{prefix}: " + (", ".join(dict.fromkeys(notes)) if notes else "sin corrección")
 
 
+def _parse(raw: str, thousands: str, decimals: int = 0) -> Amount | None:
+    return parse_decimal(raw, thousands, decimals) if decimals else parse_amount(raw, thousands)
+
+
 def sentence_amount(rows: list[Row], spec: SentenceFigureSpec,
                     thousands: str) -> tuple[Amount, Row]:
     """La cifra de la frase, en la unidad del documento, y la línea donde está."""
@@ -423,7 +446,7 @@ def sentence_amount(rows: list[Row], spec: SentenceFigureSpec,
     raw = match.group("amount")
     # "£nil" en el texto: el informe dice que es cero.
     ocr_read = (Amount(0, raw, ("«nil» en el texto: cero",)) if raw.strip().lower() == "nil"
-                else parse_amount(raw.lstrip("£€$"), thousands))
+                else _parse(raw.lstrip("£€$"), thousands, spec.decimals))
     if spec.image_reading is None:
         read = ocr_read
         if read is None or read.dash:
@@ -431,7 +454,7 @@ def sentence_amount(rows: list[Row], spec: SentenceFigureSpec,
                 f"pág. {spec.page}: {spec.concept}: {raw!r} no es un importe. Si el OCR lo lee "
                 "mal, hay que leerlo en la imagen y anotarlo en image_reading")
     else:
-        read = parse_amount(spec.image_reading.lstrip("£€$"), thousands)
+        read = _parse(spec.image_reading.lstrip("£€$"), thousands, spec.decimals)
         if read is None or read.dash:
             raise ExtractionError(f"pág. {spec.page}: {spec.concept}: la lectura en la imagen "
                                   f"{spec.image_reading!r} no es un importe")
@@ -478,6 +501,12 @@ def rows_by_order(table: Table, keys: tuple[str, ...], anchors: dict[str, str],
             raise ExtractionError(f"pág. {page}: la fila {key} dice {found[key].raw_label!r}, "
                                   f"que no casa con {pattern}")
     return found
+
+
+def _is_rule(row: TableRow) -> bool:
+    """Una raya de subtotal leída como guion: sin rótulo, con un solo guion y nada más."""
+    return (not row.label and len(row.amounts) == 1
+            and all(amount.dash for amount in row.amounts.values()))
 
 
 def block_rows(table: Table, block: tuple | None, page: int) -> Table:
@@ -652,7 +681,7 @@ def _text_table(spec: DocumentSpec, name: str, cells: list[TextCellSpec], pdf_pa
     found = {}
     for cell in cells:
         sentence = SentenceFigureSpec(cell.key, page, cell.label, cell.pattern, cell.column,
-                                      scale=cell.scale)
+                                      scale=cell.scale, decimals=cell.decimals)
         amount, row = sentence_amount(rows, sentence, spec.thousands)
         found[cell.key] = TableRow(normalize_label(cell.label), cell.label, None, {0: amount},
                                    row)
@@ -671,11 +700,17 @@ def _exact(value: Decimal) -> int | Decimal:
 def read_ixbrl_document(name: str, spec: IxbrlDocumentSpec, path: Path) -> DocumentResult:
     """Cifras y cuadres de un paquete ESEF, en la unidad del iXBRL (euros), tal como están
     etiquetados: value_reported es el valor exacto (sección 5 del plan)."""
+    both = set(spec.concepts) & set(spec.instant_concepts)
+    if both:
+        raise ExtractionError(f"{', '.join(sorted(both))}: clave de periodo y de instante a la vez")
+    concepts = {**spec.concepts, **spec.instant_concepts}
     try:
         report = ixbrl.read_report(path)
         facts = {(key, column): report.find(concept, spec.entity, period, spec.dimensions)
-                 for key, concept in spec.concepts.items()
-                 for column, period in spec.periods.items()}
+                 for mapping, periods in ((spec.concepts, spec.periods),
+                                          (spec.instant_concepts, spec.instants))
+                 for key, concept in mapping.items()
+                 for column, period in periods.items()}
     except ixbrl.IxbrlError as exc:
         raise ExtractionError(str(exc)) from exc
     for fact in facts.values():
@@ -687,8 +722,7 @@ def read_ixbrl_document(name: str, spec: IxbrlDocumentSpec, path: Path) -> Docum
     for calc in spec.calcs:
         terms = []
         for key, weight in calc.parts:
-            arc = (ixbrl.concept_key(spec.concepts[calc.total]),
-                   ixbrl.concept_key(spec.concepts[key]))
+            arc = (ixbrl.concept_key(concepts[calc.total]), ixbrl.concept_key(concepts[key]))
             declared = report.calculations.get(arc)
             if declared is not None and declared != weight:
                 raise ExtractionError(
@@ -697,7 +731,7 @@ def read_ixbrl_document(name: str, spec: IxbrlDocumentSpec, path: Path) -> Docum
             terms.append(f"{'−' if weight < 0 else '+'} {key}"
                          + ("" if declared is not None else " (sin arco en el linkbase)"))
         relation = f"{calc.total} = " + " ".join(terms).removeprefix("+ ")
-        for column in spec.periods:
+        for column in (spec.instants if calc.total in spec.instant_concepts else spec.periods):
             total = facts[(calc.total, column)]
             computed = sum(weight * facts[(key, column)].value for key, weight in calc.parts)
             cells = tuple(("ixbrl", key, column) for key in (calc.total, *dict(calc.parts)))
@@ -740,7 +774,35 @@ def read_ixbrl_document(name: str, spec: IxbrlDocumentSpec, path: Path) -> Docum
             figure_spec.concept, figure_spec.column, -value if figure_spec.negate else value,
             tuple(components), "ixbrl", figure_spec.note, figure_spec.negate,
             figure_spec.included_in_staff_costs, figure_spec.unit))
+    figures += [_xhtml_sentence(report, sentence, spec.thousands) for sentence in spec.sentences]
     return DocumentResult(name, figures, checks, [], {}, _gaps(spec, figures))
+
+
+def _xhtml_sentence(report: ixbrl.Report, spec: SentenceFigureSpec, thousands: str) -> Figure:
+    """Una cifra que solo está en una frase del XHTML, sin etiquetar: se localiza por su texto
+    en la página, como en un PDF (decisión 45), y se cita por página."""
+    text = report.texts.get(spec.page, "")
+    matches = list(re.finditer(spec.pattern, text, re.I))
+    if len(matches) != 1:
+        raise ExtractionError(f"pág. {spec.page} del XHTML: la frase de {spec.concept} "
+                              f"({spec.pattern}) aparece {len(matches)} veces")
+    match = matches[0]
+    raw = match.group("amount")
+    amount = _parse(raw, thousands, spec.decimals)
+    if amount is None or amount.dash:
+        raise ExtractionError(f"pág. {spec.page} del XHTML: {spec.concept}: {raw!r} no es un "
+                              "importe")
+    if amount.value % spec.scale:
+        raise ExtractionError(f"pág. {spec.page} del XHTML: {spec.concept}: {amount.value:,} no "
+                              f"es múltiplo exacto de {spec.scale:,}")
+    snippet = text[max(match.start() - 250, 0):match.end() + 250]
+    component = Component(
+        spec.page, spec.label, spec.column, 1,
+        Amount(amount.value // spec.scale, raw, ("frase del XHTML, sin etiquetar",)),
+        f"<tr><td>…{html.escape(snippet)}…</td></tr>", None,
+        reference="frase del XHTML, sin etiquetar")
+    return Figure(spec.concept, spec.column, component.amount.value, (component,), "ixbrl",
+                  spec.note, unit=spec.unit)
 
 
 def _gaps(spec, figures: list[Figure]) -> dict[str, str]:
@@ -766,7 +828,7 @@ def _xhtml_table(report: ixbrl.Report, spec: XhtmlTableSpec) -> LoadedTable:
         amounts = {}
         for index, cell in enumerate(spec.cells):
             text = row.cells[cell] if cell < len(row.cells) else ""
-            amount = parse_amount(text, spec.thousands) if text.strip() else None
+            amount = _parse(text, spec.thousands, spec.decimals) if text.strip() else None
             if amount is not None:
                 amounts[index] = amount
         table_rows.append(TableRow(normalize_label(row.cells[0]), row.cells[0], None, amounts,
@@ -815,6 +877,10 @@ def read_document(name: str, spec: DocumentSpec, pdf_path: Path, sha256: str,
                     f"{len(table_spec.columns)} columnas y hay {len(candidates)} tablas así"
                 )
             table = block_rows(candidates[0], table_spec.block, page)
+            if table_spec.drop_rules:
+                table = Table(table.header_raw, table.column_x2,
+                              [row for row in table.rows if not _is_rule(row)],
+                              table.header_label)
             rows = find_rows(table, {key: pattern for key, pattern in table_spec.rows.items()
                                      if key not in table_spec.after}, page)
             for key, anchor in table_spec.after.items():
@@ -860,6 +926,11 @@ def read_document(name: str, spec: DocumentSpec, pdf_path: Path, sha256: str,
             components.append(Component(item.spec.page, row.raw_label, column, part.sign,
                                         _amount(loaded, cell), row.row, item.image_path))
         value = sum(c.sign * c.amount.value for c in components)
+        if figure_spec.expect_zero and value != 0:
+            raise ExtractionError(
+                f"{figure_spec.concept} tendría que ser 0 (el total menos todas sus líneas) y da "
+                f"{value:,}: " + "; ".join(f"{'−' if c.sign < 0 else '+'} pág. {c.page} "
+                                           f"{c.label!r} {c.amount.value:,}" for c in components))
         figures.append(Figure(
             figure_spec.concept, figure_spec.column, -value if figure_spec.negate else value,
             tuple(components), spec.method, figure_spec.note, figure_spec.negate,
@@ -886,7 +957,8 @@ def read_document(name: str, spec: DocumentSpec, pdf_path: Path, sha256: str,
             sentence.concept, sentence.column, amount.value,
             (Component(sentence.page, sentence.label, sentence.column, 1, amount, row,
                        image_path),),
-            spec.method, sentence.note, included_in_staff_costs=sentence.included_in_staff_costs))
+            spec.method, sentence.note, included_in_staff_costs=sentence.included_in_staff_costs,
+            unit=sentence.unit))
         if sentence.image_reading is not None:
             summary["cifras leídas en la imagen porque el OCR falló"] = summary.get(
                 "cifras leídas en la imagen porque el OCR falló", 0) + 1

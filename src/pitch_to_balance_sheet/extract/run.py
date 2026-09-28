@@ -14,6 +14,7 @@ import pandera.pandas as pa
 from PIL import Image
 
 from pitch_to_balance_sheet import manifest
+from pitch_to_balance_sheet.concepts import BALANCE, MULTIPLIERS
 from pitch_to_balance_sheet.config import (
     INTERIM_DIR,
     RAW_DIR,
@@ -38,7 +39,6 @@ CONCEPTS = ("revenue_total_reported", "revenue_ex_player_trading", "staff_costs"
             "net_result_attributable_parent")
 # Marca de la tabla: si la indemnización está dentro de los gastos de personal.
 INCLUDED_MARKS = {"true": " (dentro)", "false": " (fuera)", "dudoso": " (¿dentro?)"}
-MULTIPLIERS = {"units": 1, "thousands": 1000}
 SHORT = {"revenue_matchday": "matchday", "revenue_broadcasting": "broadcasting",
          "revenue_commercial": "commercial", "revenue_other": "other",
          "amortisation_player_registrations": "amortización",
@@ -110,7 +110,9 @@ def excerpt_figure(figure: Figure, path) -> None:
     for component in figure.components:
         fact = component.row
         if not isinstance(fact, ixbrl.Fact):
-            parts.append(f"<h2>{html.escape(component.label)}</h2>\n<p>Tabla sin etiquetar, pág. "
+            what = ("Frase sin etiquetar" if component.reference.startswith("frase")
+                    else "Tabla sin etiquetar")
+            parts.append(f"<h2>{html.escape(component.label)}</h2>\n<p>{what}, pág. "
                          f"{component.page} del XHTML, columna {html.escape(component.column)}."
                          f"</p>\n<table border=\"1\">{fact}</table>")
             continue
@@ -423,6 +425,41 @@ def mix_table(results: list[ClubResult], frame: pd.DataFrame) -> str:
     return "\n".join(lines)
 
 
+BALANCE_TITLES = {"borrowings": "Deuda financiera", "lease_liabilities": "Arrendamientos",
+                  "cash": "Caja", "transfer_payables": "Acreedores por traspasos",
+                  "transfer_receivables": "Deudores por traspasos"}
+
+
+def balance_table(results: list[ClubResult]) -> str:
+    """Balance al cierre, en miles de la moneda original: total y, entre paréntesis, corriente /
+    no corriente si el club los separa. Y las acciones de los cotizados, en unidades."""
+    names = {club.club_id: club.name for club in load_clubs()}
+    lines = ["| Club | Moneda | " + " | ".join(BALANCE_TITLES.values())
+             + " | Acciones en circulación | Huecos |", "|" + " --- |" * 9]
+    for result in results:
+        name = names.get(result.club_id, result.club_id)
+        if result.error:
+            lines.append(f"| {name} | {result.spec.currency} |" + " — |" * 6
+                         + f" error: {result.error} |")
+            continue
+        cells = []
+        for concept in BALANCE_TITLES:
+            text = _cell(result, concept)
+            split = [_cell(result, f"{concept}_{part}") for part in ("current", "non_current")]
+            if concept != "cash" and any(value != "hueco" for value in split):
+                text += f" ({split[0]} / {split[1]})"
+            cells.append(text)
+        by_concept = {figure.concept: figure for figure in result.figures}
+        shares = by_concept.get("shares_outstanding")
+        share_text = "—" if shares is None else (
+            f"{shares.value * MULTIPLIERS[shares.unit or result.spec.unit]:,}"
+            + (" *" if shares.is_derived else ""))
+        gaps = ", ".join(concept for concept in result.gaps if concept in BALANCE)
+        lines.append(f"| {name} | {result.spec.currency} | " + " | ".join(cells)
+                     + f" | {share_text} | {gaps or '—'} |")
+    return "\n".join(lines)
+
+
 def _cell(result: ClubResult, concept: str) -> str:
     if concept in result.gaps:
         return "hueco"
@@ -447,10 +484,11 @@ def _value(figure: Figure | None, unit: str) -> str:
     mostrarlas (el CSV guarda el valor exacto)."""
     if figure is None:
         return "—"
-    value = figure.value
     unit = figure.unit or unit
-    if unit == "units":
-        value = int((Decimal(value) / 1000).quantize(Decimal(1), rounding=ROUND_HALF_UP))
+    value = figure.value
+    if unit != "thousands":  # a miles, solo para mostrarla
+        value = int((Decimal(value) * MULTIPLIERS[unit] / 1000).quantize(
+            Decimal(1), rounding=ROUND_HALF_UP))
     text = f"{value:,}" if value >= 0 else f"({-value:,})"
     return (text + (" *" if figure.is_derived else "")
             + INCLUDED_MARKS.get(figure.included_in_staff_costs, ""))

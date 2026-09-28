@@ -44,4 +44,6 @@ uv run python -m pitch_to_balance_sheet register-manual   # PDFs manuales al man
 uv run python -m pitch_to_balance_sheet text-layer        # capa de texto de los PDFs locales
 uv run python -m pitch_to_balance_sheet extract [--club X]  # cifras, cuadres y recortes
 uv run python -m pitch_to_balance_sheet extract --reocr     # ídem, volviendo a pasar Vision
+uv run python -m pitch_to_balance_sheet download-fx       # tipos de referencia del BCE
+uv run python -m pitch_to_balance_sheet facts             # fact_financials en EUR (parquet y DuckDB)
 ```

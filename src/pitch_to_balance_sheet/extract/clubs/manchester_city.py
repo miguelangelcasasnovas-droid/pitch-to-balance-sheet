@@ -9,15 +9,24 @@ Texto directo con pdfplumber, sin OCR. Páginas localizadas buscando los título
 - pág. 42, nota 12, Intangible fixed assets: el cargo del año de los derechos de jugadores. La
   nota no separa amortización y deterioro: la nota 5 (pág. 36) lo llama "Amortisation and
   impairment of intangible assets".
+
+Fase 3b, balance a 30/06/2025 (pág. 22) y sus notas:
+- pág. 46, nota 16: receivables arising from player transfers, corrientes y no corrientes.
+- pág. 47, notas 17 y 18: acreedores corrientes y no corrientes, con los arrendamientos y los
+  payables arising from player transfers.
+- pág. 48, nota 19: el total de los arrendamientos.
+El balance no tiene deuda financiera: ni el balance ni las notas 17 y 18 tienen préstamos.
 """
 
-from pitch_to_balance_sheet.extract import mix
+from pitch_to_balance_sheet.extract import balance, mix
 from pitch_to_balance_sheet.extract.statements import (
     ClubSpec,
     Cross,
     DocumentSpec,
     FigureSpec,
     Link,
+    LinkSum,
+    Part,
     Sum,
     TableSpec,
 )
@@ -62,6 +71,53 @@ REVENUE_EX_NOTE = (
     "Revenue esa columna es un guion: no hay traspasos ni cesiones."
 )
 
+YEARS = ("2025", "2024")
+CURRENT_LIABILITIES = {"derivatives": r"^derivative financial instruments$",
+                       "payables": r"^trade and other payables$",
+                       "deferred_income": r"^deferred income$"}
+RECEIVABLES_CURRENT = {
+    "trade": r"^trade receivables$",
+    "transfers": r"^receivables arising from player transfers$",
+    "group": r"^amounts owed by group undertakings$",
+    "related": r"^amounts owed by related party undertakings",
+    "other": r"^other receivables including tax",
+    "prepayments": r"^prepayments and accrued income$",
+    "total": r"^total$",
+}
+PAYABLES_CURRENT = {
+    "lease": r"^lease liabilities \(note 19\)$",
+    "trade": r"^trade payables$",
+    "transfers": r"^payables arising from player transfers$",
+    "group": r"^amounts owed to group undertakings$",
+    "related": r"^amounts owed to related party undertakings",
+    "other": r"^other payables including tax",
+    "accruals": r"^accruals$",
+    "total": r"^total$",
+}
+PAYABLES_NON_CURRENT = {
+    "lease": r"^lease liabilities \(note 19\)$",
+    "transfers": r"^payables arising from player transfers$",
+    "group": r"^amounts owed to group undertakings$",
+    "total": r"^total$",
+}
+LEASE_MATURITY = {
+    "within_one_year": r"^within one year$",
+    "one_to_two": r"^between one and two years$",
+    "two_to_five": r"^between two and five years$",
+    "after_five": r"^after more than five years$",
+    "total": r"^total$",
+}
+GROUP_NOTE = (
+    "Los importes con otras sociedades de City Football Group no son deuda financiera: la nota "
+    "17 dice que los corrientes son refacturaciones de costes, sin interés, y la nota 18 no "
+    "llama préstamo a los no corrientes (102.031, con City Football Group USA LLC y vencimiento "
+    "en julio de 2030) ni dice que devenguen interés."
+)
+BORROWINGS_NOTE = (
+    "0, derivado: el balance (pág. 22) no tiene deuda financiera, y los acreedores de las notas "
+    "17 y 18 no incluyen préstamos. " + GROUP_NOTE
+)
+
 PLAYER_OTHER_INCOME_GAP = (
     "no se publica por separado: la cuenta y las notas leídas no dan ingresos por cesiones, "
     "sell-on ni bonus fuera de profit_on_player_disposals"
@@ -103,6 +159,41 @@ SPEC = ClubSpec(
                 "intangibles", 42, ("other", "players", "total"), INTANGIBLE_ROWS,
                 cross=(Cross("total", ("other", "players"), ("charge",)),),
             ),
+            # Fase 3b: balance y notas.
+            TableSpec("bs_noncurrent_assets", 22, YEARS,
+                      {"receivables": r"^trade and other receivables$"},
+                      block=(r"^non-current assets$", r"^trade and other receivables$")),
+            TableSpec("bs_current_assets", 22, YEARS,
+                      {"receivables": r"^trade and other receivables$",
+                       "cash": r"^cash at bank and in hand$"},
+                      totals_after={"total": "cash"},
+                      block=(r"^current assets$", r"^current liabilities$"),
+                      sums=(Sum("total", ("receivables", "cash")),)),
+            TableSpec("bs_current_liabilities", 22, YEARS, CURRENT_LIABILITIES,
+                      totals_after={"total": "deferred_income"},
+                      block=(r"^current liabilities$", r"^net current"),
+                      sums=(Sum("total", tuple(CURRENT_LIABILITIES)),)),
+            TableSpec("bs_noncurrent_liabilities", 22, YEARS,
+                      {"payables": r"^trade and other payables$"},
+                      totals_after={"total": "payables"},
+                      block=(r"^non-current liabilities$", r"^net assets$"),
+                      sums=(Sum("total", ("payables",)),)),
+            TableSpec("receivables_current", 46, YEARS, RECEIVABLES_CURRENT,
+                      block=(r"^current trade and other receivables$", r"^total$"),
+                      sums=(Sum("total", tuple(RECEIVABLES_CURRENT)[:-1]),)),
+            TableSpec("receivables_noncurrent", 46, YEARS,
+                      {"transfers": r"^receivables arising from player transfers$",
+                       "total": r"^total$"},
+                      block=(r"^non-current trade and other receivables$", r"^total$"),
+                      sums=(Sum("total", ("transfers",)),)),
+            TableSpec("payables_current", 47, YEARS, PAYABLES_CURRENT, select=r"^accruals$",
+                      sums=(Sum("total", tuple(PAYABLES_CURRENT)[:-1]),)),
+            TableSpec("payables_noncurrent", 47, YEARS, PAYABLES_NON_CURRENT,
+                      select=r"^amounts owed to group undertakings due after one year",
+                      sums=(Sum("total", tuple(PAYABLES_NON_CURRENT)[:-1]),)),
+            TableSpec("leases", 48, YEARS, LEASE_MATURITY,
+                      select=r"^maturity of lease liabilities$",
+                      sums=(Sum("total", tuple(LEASE_MATURITY)[:-1]),)),
         ),
         links=(
             Link(("revenue", "total", "2025"), ("pnl", "revenue", "total_2025")),
@@ -111,6 +202,18 @@ SPEC = ClubSpec(
             Link(("intangibles", "charge", "total"), ("pnl", "operating_expenses", "players_2025"),
                  sign=-1),
             MIX.check(),
+            # Balance: cada nota es su línea del balance (en negativo en el pasivo).
+            Link(("receivables_current", "total", "2025"),
+                 ("bs_current_assets", "receivables", "2025")),
+            Link(("receivables_noncurrent", "total", "2025"),
+                 ("bs_noncurrent_assets", "receivables", "2025")),
+            Link(("payables_current", "total", "2025"),
+                 ("bs_current_liabilities", "payables", "2025"), sign=-1),
+            Link(("payables_noncurrent", "total", "2025"),
+                 ("bs_noncurrent_liabilities", "payables", "2025"), sign=-1),
+            LinkSum(("leases", "total", "2025"), (("payables_current", "lease", "2025"),
+                                                  ("payables_noncurrent", "lease", "2025"))),
+            Link(("leases", "within_one_year", "2025"), ("payables_current", "lease", "2025")),
         ),
         figures=(
             FigureSpec("revenue_total_reported", (("pnl", "revenue"),), "total_2025"),
@@ -124,6 +227,24 @@ SPEC = ClubSpec(
                        (("intangibles", "charge", "players"),), "2025", note=AMORTISATION_NOTE),
             FigureSpec("profit_on_player_disposals", (("pnl", "profit_disposal_players"),),
                        "total_2025", note="Profit on disposal of players' registrations."),
+            # Balance a 30/06/2025.
+            FigureSpec("cash", (("bs_current_assets", "cash"),), "2025",
+                       note="Cash at bank and in hand (pág. 22)."),
+            *balance.zero_from_lines("borrowings", (
+                ("bs_current_liabilities", "total", tuple(CURRENT_LIABILITIES)),
+                ("bs_noncurrent_liabilities", "total", ("payables",))), "2025",
+                BORROWINGS_NOTE),
+            *balance.split("lease_liabilities", Part("payables_current", "lease"),
+                           Part("payables_noncurrent", "lease"), "2025",
+                           total=Part("leases", "total"),
+                           note="Lease liabilities de las notas 17 y 18; el total, de la nota 19 "
+                                "(arrendamiento del Etihad Stadium, nota 14)."),
+            *balance.split("transfer_payables", Part("payables_current", "transfers"),
+                           Part("payables_noncurrent", "transfers"), "2025",
+                           note="Payables arising from player transfers (notas 17 y 18)."),
+            *balance.split("transfer_receivables", Part("receivables_current", "transfers"),
+                           Part("receivables_noncurrent", "transfers"), "2025",
+                           note="Receivables arising from player transfers (nota 16)."),
         ),
         gaps={
             **MIX.gaps(),

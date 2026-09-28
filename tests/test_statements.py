@@ -234,10 +234,33 @@ def test_las_especificaciones_de_los_clubes_se_cargan():
     assert SPECS["lazio"].primary.method == "ixbrl"
     assert SPECS["lazio"].primary.periods["2025"] == "2024-07-01/2025-06-30"
     assert SPECS["porto"].primary.tables[0].columns == ("2024", "2025")  # 2024 va antes
+    from pitch_to_balance_sheet.concepts import BALANCE
+
     assert set(SPECS["porto"].controls[0].without) == {
         "staff_severance_disclosed", "revenue_matchday", "revenue_commercial",
         "amortisation_player_registrations", "impairment_player_registrations",
-        "profit_on_player_disposals", "player_trading_other_income"}
+        "profit_on_player_disposals", "player_trading_other_income", *BALANCE,
+        "shares_outstanding"}
+
+
+def test_cada_club_da_cada_concepto_de_balance_como_cifra_o_hueco():
+    """Fase 3b: los 14 clubes tienen deuda, arrendamientos, caja y saldos por traspasos, con sus
+    partes corriente y no corriente, como cifra o como hueco con motivo; y los 8 cotizados, sus
+    acciones en circulación."""
+    from pitch_to_balance_sheet.concepts import BALANCE
+    from pitch_to_balance_sheet.extract.clubs import SPECS
+
+    listed = {"manchester_united", "juventus", "borussia_dortmund", "celtic", "ajax", "benfica",
+              "lazio", "porto"}
+    for club_id, club_spec in SPECS.items():
+        document = club_spec.primary
+        figures = [f.concept for f in (*document.figures, *document.sentences)]
+        covered = figures + list(document.gaps)
+        for concept in BALANCE:
+            assert covered.count(concept) == 1, (club_id, concept)
+        assert ("shares_outstanding" in figures) == (club_id in listed), club_id
+        for concept, reason in document.gaps.items():
+            assert reason.strip(), (club_id, concept)
 
 
 def test_included_in_staff_costs_solo_admite_true_false_o_dudoso():
@@ -453,3 +476,48 @@ def test_una_cifra_de_una_frase_se_usa_como_celda(tmp_path):
     assert [(c.reported, c.computed, c.ok) for c in link] == [(1000, 1000, True)]
     (other,) = [f for f in result.figures if f.concept == "revenue_other"]
     assert other.value == 0 and other.components[1].label == "Turnover en el texto"
+
+
+@pytest.mark.parametrize(("raw", "thousands", "decimals", "value"), [
+    ("210.8", ",", 1, 2108), ("(0,58)", ".", 2, -58), ("1.234,56", ".", 2, 123456),
+    ("-", ",", 1, 0), ("210", ",", 1, None), ("210.85", ",", 1, None),
+])
+def test_importe_con_decimales_en_la_unidad_de_su_ultimo_decimal(raw, thousands, decimals,
+                                                                 value):
+    from pitch_to_balance_sheet.extract.tables import parse_decimal
+
+    amount = parse_decimal(raw, thousands, decimals)
+    assert (amount.value if amount else None) == value
+
+
+def test_una_raya_de_subtotal_leida_como_guion_no_es_una_fila():
+    from pitch_to_balance_sheet.extract.statements import _is_rule
+    from pitch_to_balance_sheet.extract.tables import Amount, TableRow
+
+    rule = TableRow("", "", None, {0: Amount(0, "-", dash=True)}, None)
+    zero = TableRow("other", "Other", None, {0: Amount(0, "-", dash=True)}, None)
+    total = TableRow("", "", None, {0: Amount(5, "5")}, None)
+    assert _is_rule(rule) and not _is_rule(zero) and not _is_rule(total)
+
+
+def test_un_cero_derivado_que_no_da_cero_es_error(tmp_path):
+    zero = FigureSpec("borrowings_current",
+                      (Part("pnl", "gross_profit"), Part("pnl", "turnover", sign=-1),
+                       Part("pnl", "cost_of_sales", sign=-1)), "2025", expect_zero=True)
+    result = read_document("principal", spec(figures=(zero,)), TABLE, "fixture", tmp_path)
+    assert result.figures[0].value == 0 and result.figures[0].is_derived
+    wrong = FigureSpec("borrowings_current",
+                       (Part("pnl", "gross_profit"), Part("pnl", "turnover", sign=-1)), "2025",
+                       expect_zero=True)
+    with pytest.raises(ExtractionError, match="tendría que ser 0"):
+        read_document("principal", spec(figures=(wrong,)), TABLE, "fixture", tmp_path)
+
+
+def test_frase_con_decimales_en_millones():
+    rows = [Row([Observation("Other creditors include £210.8 million (2024 - £267.8 million) "
+                             "in respect", 1.0, (0, 0, 10, 10))])]
+    sentence = SentenceFigureSpec("transfer_payables", 1, "Other creditors",
+                                  r"include £(?P<amount>\d+\.\d) million \(2024", "2025",
+                                  decimals=1, unit="hundred_thousands")
+    amount, _ = sentence_amount(rows, sentence, ",")
+    assert amount.value == 2108
