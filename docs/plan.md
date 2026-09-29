@@ -122,6 +122,7 @@ Conceptos, lista cerrada en `src/pitch_to_balance_sheet/concepts.py` (actualizad
 - **Cuenta de resultados:** `revenue_total_reported`, `revenue_ex_player_trading`, `revenue_matchday`, `revenue_broadcasting`, `revenue_commercial`, `revenue_other`, `staff_costs`, `staff_costs_exceptional`, `staff_severance_disclosed`, `net_result`, `net_result_attributable_parent`, `amortisation_player_registrations`, `impairment_player_registrations`, `profit_on_player_disposals` y `player_trading_other_income`.
 - **Balance al cierre:** `borrowings`, `lease_liabilities`, `transfer_payables` y `transfer_receivables`, cada uno con su parte `_current` y `_non_current`, y `cash`.
 - **Cotizados:** `shares_outstanding`.
+- **Sensibilidad:** `related_party_financing`, saldos con sociedades vinculadas que no cumplen la definición de deuda financiera (Manchester City).
 
 Columnas añadidas a las de la tabla: `value_full` (la cifra en unidades completas), `fx_source_file` y `fx_note` (qué tipos y cuántos días), `components`, `column`, `crop`, `extraction_method`, `ocr_note`, `is_derived`, `included_in_staff_costs` y `definition_note`.
 
@@ -274,29 +275,34 @@ Cinco métricas por club y temporada, y una valoración por EV/ingresos que da u
 - **`profit_on_player_disposals`:** el beneficio neto por la venta de derechos de jugadores, tal como lo publica el club (plusvalías menos minusvalías y, según el club, costes de venta). No incluye cesiones ni otros ingresos de jugadores.
 - **`player_trading_other_income`** (decidido el 27/09/2026): cesiones, sell-on fees y bonus que el club no incluye en `profit_on_player_disposals`. No entra en los ingresos; entrará en el denominador del SCR aproximado, en el promedio de tres años junto al resultado por traspasos. Es hueco si el club no lo publica por separado.
 
-**Balance al cierre y acciones (fase 3b, 28/09/2026; definiciones pendientes del OK del usuario):**
+**Balance al cierre y acciones (fase 3b; aceptadas el 29/09/2026, con los cambios del usuario en la deuda financiera y la deuda neta):**
 
-- **`borrowings`, deuda financiera:** préstamos bancarios, bonos y obligaciones, descubiertos y otros préstamos que el club presenta como deuda financiera, con los intereses devengados si van en la misma línea. Entran:
-  - los anticipos de factoring o de cesión de créditos cuando el club los presenta como deuda financiera o como préstamos (Juventus, Porto y Lazio); si los presenta en otra línea, no (la cesión de créditos de Benfica, en outros passivos), anotado;
-  - los préstamos de accionistas o de sociedades del grupo cuando el informe los llama préstamo (Arsenal, de KSE UK; Liverpool, de FSG);
+- **`borrowings`, deuda financiera:** préstamos bancarios, bonos y obligaciones, descubiertos y otros préstamos, con los intereses devengados si van en la misma línea. Entran:
+  - el factoring y la cesión de créditos, se presenten donde se presenten: Juventus (244.776), Porto (42.997), Lazio y Benfica (22.078, que el club lleva a outros passivos; decisión del usuario del 29/09/2026);
+  - los préstamos de accionistas o de sociedades del grupo que devengan intereses o tienen calendario de devolución (Arsenal, de KSE UK; Liverpool, de FSG; Manchester City, los 102.031 con City Football Group USA LLC con vencimiento en julio de 2030, nota 18, pág. 47);
   - la parte de deuda de instrumentos compuestos (las acciones preferentes convertibles de Celtic).
-  - No entran: los arrendamientos (van en `lease_liabilities`), los derivados, los warrants a valor razonable (Tottenham) ni los saldos con el grupo que el informe no presenta como préstamo (Manchester City), anotado.
-- **`lease_liabilities`:** pasivos por arrendamiento (NIIF 16). En FRS 102 los arrendamientos operativos no van al balance: la cifra es 0 y no es comparable, anotado (Arsenal, Chelsea, Liverpool y Newcastle).
+  - No entran: los arrendamientos (van en `lease_liabilities`), los derivados y los warrants a valor razonable (Tottenham). Los saldos con sociedades vinculadas sin interés ni calendario de devolución van a `related_party_financing`, solo para una variante de sensibilidad: en Manchester City, las refacturaciones de costes con el grupo a menos de un año (131.930, nota 17, pág. 47).
+- **`lease_liabilities`:** pasivos por arrendamiento (NIIF 16). En FRS 102 los arrendamientos operativos no van al balance: la cifra es 0, anotada como no comparable (Arsenal, Chelsea, Liverpool y Newcastle). El marco contable de cada club, con su página, está en `config/clubs.yaml`: FRS 101 (Manchester City) sí reconoce los arrendamientos.
 - **`cash`:** efectivo y equivalentes del balance; no incluye otros activos financieros.
 - **`transfer_payables` y `transfer_receivables`:** saldos con clubes (y con la liga cuando es ella la que liquida los traspasos, como la Lega en Lazio) por la compra y la venta de derechos de jugadores. Valor contable, neto de actualización financiera, cuando la nota permite aislarlo; si no, el nominal de la nota, anotado. Si el club no los separa de los deudores y acreedores comerciales, son hueco.
 - **Corriente y no corriente:** `_current` y `_non_current`, si el club los separa; si no, hueco con motivo. El total es la cifra publicada si la hay (cuadrada con sus partes) o su suma, derivada.
 - **Una partida que el balance no tiene** vale 0, derivado, como en el reparto de ingresos: el total del bloque menos todas sus líneas (del balance o de la nota que las desglosa), que tiene que dar exactamente 0; si no, error.
 - **`shares_outstanding`:** acciones emitidas al cierre de todas las clases con los mismos derechos económicos que las que cotizan, menos las acciones propias, del propio informe (Manchester United: clases A y B; Benfica y Porto: categorías A y B). Las preferentes convertibles no entran (Celtic), anotado.
-- **Deuda neta**, en la tabla resumen de la fase 3b: `borrowings` + `lease_liabilities` − `cash`; la variante suma `transfer_payables` y resta `transfer_receivables`. Si falta un componente, es hueco, y la tabla dice cuál. En EUR, con el tipo de cierre.
+- **Deuda neta, decidida por el usuario el 29/09/2026:**
+  - `net_debt`, la principal: `borrowings` − `cash`, sin arrendamientos, porque FRS 102 no los reconoce y la NIIF 16 sí;
+  - `net_debt_incl_leases`: + `lease_liabilities`, solo en los clubes que reconocen los arrendamientos (NIIF y FRS 101); en FRS 102 es «no comparable», no 0;
+  - `net_debt_incl_transfers`: `net_debt` + `transfer_payables` − `transfer_receivables`;
+  - `net_debt_incl_related_party`: `net_debt` + `related_party_financing`, solo donde existe (sensibilidad).
+  - Si falta un componente, es hueco, y la métrica dice cuál. En EUR, con el tipo de cierre.
 
 **Resultado neto, decidido el 27/09/2026:** `net_result` es el resultado consolidado total, con los minoritarios. `net_result_attributable_parent`, lo atribuible a la matriz, es informativo y se guarda en los clubes que lo publican.
 
 | Métrica | Definición | Si falta un dato |
 | --- | --- | --- |
-| Mix de ingresos | matchday, broadcasting y commercial sobre ingresos totales. Premios UEFA en broadcasting | Hueco si el club no desglosa |
-| Salarios / ingresos | gastos de personal totales / ingresos | Hueco |
-| SCR aproximado | fórmula de abajo, desde 2023/24 | Hueco si faltan la amortización de jugadores o 3 años de traspasos |
-| Deuda neta / ingresos | (deuda financiera + arrendamientos − caja) / ingresos; variante que suma saldos netos por traspasos | Hueco |
+| Mix de ingresos | matchday, broadcasting, commercial y other sobre `revenue_ex_player_trading`. Premios UEFA en broadcasting | Hueco si el club no desglosa |
+| Salarios / ingresos | gastos de personal totales / `revenue_ex_player_trading` | Hueco |
+| SCR aproximado | fórmula de abajo, desde 2023/24 | Hueco si faltan la amortización de jugadores o 3 años de traspasos. En 2024/25: hueco, «faltan 2022/23 y 2023/24 para el promedio de traspasos a 3 años» |
+| Deuda neta / ingresos | `net_debt` / `revenue_ex_player_trading`, y sus variantes con arrendamientos (no comparable en FRS 102) y con traspasos netos | Hueco |
 | EV / ingresos y bolsa (cotizados) | capitalización de todas las clases de acciones + deuda neta, sobre ingresos; rentabilidad total indexada a 100 | Hueco |
 
 El SCR aproximado imita la estructura de la UEFA: el resultado de traspasos se promedia a 3 años. No separa los salarios de jugadores y usa año fiscal, por eso es aproximado.
@@ -325,6 +331,17 @@ Supuestos explícitos del caso base:
 6. **Real Madrid y Barça:** su valoración se calcula igual, pero va marcada como teórica en todas las salidas.
 
 En la fase 3 cada fórmula tiene un test con un caso calculado a mano, y el dashboard muestra el rango de cada club objetivo en un gráfico de barras de rango (football field).
+
+**Cálculo, fijado en la fase 3c (29/09/2026):**
+
+- **Precios:** `download-prices` guarda con yfinance el histórico diario de cada cotizado hasta la fecha de valoración en `data/raw/market/`, con su entrada en el manifiesto. Se usa el cierre sin ajustar (Close) del 30/06/2025 o del último día de cotización anterior (como mucho 5 días antes), redondeado a 4 decimales. La moneda que devuelve yfinance tiene que ser la de `config/clubs.yaml`. El robots.txt de query1 y query2.finance.yahoo.com dice `Disallow: /`: se usa yfinance por decisión del usuario, anotado.
+- **EUR:** Celtic cotiza en peniques (entre 100) y Manchester United en dólares; se convierten con el tipo del BCE del mismo día (`download-fx` baja también la serie USD).
+- **Capitalización** = precio en EUR × `shares_outstanding` del informe; en Manchester United, clases A y B al precio de la A. **EV** = capitalización + `net_debt`. **Múltiplo** = EV / `revenue_ex_player_trading`. Todo en EUR.
+- **Percentiles:** interpolación lineal entre los múltiplos ordenados (el método por defecto de pandas y numpy): con n múltiplos, el percentil q está en la posición (n − 1) × q.
+- **No cotizados:** EV implícito = percentil × ingresos, redondeado al euro; equity implícito = EV implícito − `net_debt`. Sin prima de control.
+- **Sensibilidades** (escenarios de la tabla `valuation`): `base` (los 8 cotizados y `net_debt`), `large_peers` (Manchester United, Juventus y Borussia Dortmund), `incl_transfers` (EV y equity con `net_debt_incl_transfers`; un par sin el dato sale del cálculo, y un objetivo sin el dato tiene EV implícito pero su equity es hueco) e `incl_related_party` (el equity de Manchester City con `related_party_financing`).
+- **Prueba sobre los cotizados:** cada cotizado recibe también un EV implícito, con los pares que lo incluyen y sin él; su desviación es EV real / EV implícito mediano − 1.
+- **Almacenamiento:** tablas `metrics` (una fila por club, temporada y métrica, con `status` ok, gap o not_comparable y su motivo) y `valuation` (una fila por club, temporada y escenario) en `football.duckdb`, validadas con pandera. Las escribe `python -m pitch_to_balance_sheet valuation`.
 
 ## 10. Riesgos y mitigaciones
 

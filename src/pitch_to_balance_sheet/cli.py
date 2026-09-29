@@ -3,13 +3,17 @@
 - download: cuentas de Companies House de las fuentes que lo usan, a data/raw/companies_house/.
 - download-web: PDFs de la web de los clubes (fuentes url), a data/raw/web/.
 - download-fx: tipos de referencia diarios del BCE de las monedas de los clubes que no informan
-  en EUR, a data/raw/ecb/.
+  en EUR o no cotizan en EUR, a data/raw/ecb/.
+- download-prices: cierres de los cotizados con yfinance alrededor de la fecha de valoración, a
+  data/raw/market/.
 - register-manual: PDFs descargados a mano, al manifiesto.
 - text-layer: capa de texto de los PDFs locales, a data/processed/text_layer_<temporada>.csv.
 - extract: cifras de la cuenta de resultados y del balance de cada club, con cuadres y recortes.
   Lee el OCR guardado; con --reocr vuelve a pasar Apple Vision (solo macOS).
 - facts: fact_financials en EUR con los tipos del BCE, validada con pandera, a
-  data/processed/fact_financials.parquet y football.duckdb; y la tabla resumen en EUR.
+  data/processed/fact_financials.parquet y football.duckdb; y las métricas en EUR.
+- valuation: métricas y valoración por comparables a la fecha de valoración, a las tablas
+  metrics y valuation de football.duckdb.
 
 Si un paso falla, sale con código 1 y dice por qué.
 """
@@ -25,7 +29,7 @@ from datetime import UTC, datetime
 
 from dotenv import load_dotenv
 
-from pitch_to_balance_sheet import facts, fx, manifest
+from pitch_to_balance_sheet import facts, fx, manifest, market, metrics, report, valuation
 from pitch_to_balance_sheet.config import (
     PROCESSED_DIR,
     RAW_DIR,
@@ -130,7 +134,9 @@ def download_fx(season: str) -> int:
                if club.club_id in SPECS]
     start, end = min(w[0] for w in windows), max(w[1] for w in windows)
     errors = []
-    for currency in sorted({spec.currency for spec in SPECS.values()} - {fx.BASE}):
+    quoted = {market.iso_currency(club.quote_currency) for club in load_clubs()
+              if club.quote_currency}
+    for currency in sorted(({spec.currency for spec in SPECS.values()} | quoted) - {fx.BASE}):
         file = fx.rates_file(currency, season)
         if (RAW_DIR / file).exists():
             try:
@@ -149,6 +155,35 @@ def download_fx(season: str) -> int:
         manifest.upsert(MANIFEST, [entry])
         log.info("%s: data/raw/%s  %d tipos del %s al %s  sha256 %s", currency, file,
                  len(rates), min(rates), max(rates), entry.sha256)
+    for error in errors:
+        print(f"error: {error}", file=sys.stderr)
+    return 1 if errors else 0
+
+
+def download_prices(season: str) -> int:
+    """Descarga los cierres de los cotizados que falten y los registra en el manifiesto."""
+    errors = []
+    for club in load_clubs():
+        if not club.ticker:
+            continue
+        file = market.price_file(club.ticker)
+        if (RAW_DIR / file).exists():
+            try:
+                manifest.verify(RAW_DIR, file, MANIFEST)
+            except manifest.ManifestError as exc:
+                errors.append(f"{club.club_id}: {exc}")
+            else:
+                log.info("%s: data/raw/%s ya descargado y con su sha256", club.club_id, file)
+            continue
+        try:
+            entry = market.download_price(club, RAW_DIR)
+            price = market.load_price(RAW_DIR / file, club)
+        except market.MarketError as exc:
+            errors.append(f"{club.club_id}: {exc}")
+            continue
+        manifest.upsert(MANIFEST, [entry])
+        log.info("%s: data/raw/%s  %s %s %s (%s)  sha256 %s", club.club_id, file, price.date,
+                 price.close, price.currency, price.note, entry.sha256)
     for error in errors:
         print(f"error: {error}", file=sys.stderr)
     return 1 if errors else 0
@@ -355,10 +390,62 @@ def build_facts(season: str) -> int:
     counts = frame.groupby("is_gap").size().to_dict()
     print(f"fact_financials {season}: {len(frame)} filas, {counts.get(False, 0)} cifras y "
           f"{counts.get(True, 0)} huecos; pandera OK")
-    print("\n" + facts.summary_table(frame))
+    print("\n" + report.metrics_table(metrics.to_frame(metrics.compute(frame))))
     for path in written:
         print(f"\n{path.relative_to(ROOT)}", end="")
     print()
+    return 0
+
+
+def run_valuation(season: str) -> int:
+    """Métricas y valoración de la temporada, a las tablas metrics y valuation."""
+    try:
+        frame = facts.read(season)
+        problems = facts.validate(frame)
+        if problems:
+            raise facts.FactsError("fact_financials no pasa pandera: " + "; ".join(problems))
+        metric_frame = metrics.to_frame(metrics.compute(frame))
+        problems = metrics.validate(metric_frame)
+        if problems:
+            raise facts.FactsError("las métricas no pasan pandera: " + "; ".join(problems))
+        rates, quotes = {}, {}
+        for club in load_clubs():
+            if not club.ticker:
+                continue
+            file = market.price_file(club.ticker)
+            manifest.verify(RAW_DIR, file, MANIFEST)
+            price = market.load_price(RAW_DIR / file, club)
+            currency = market.iso_currency(price.currency)
+            if currency != fx.BASE and currency not in rates:
+                rates_file = fx.rates_file(currency, season)
+                manifest.verify(RAW_DIR, rates_file, MANIFEST)
+                rates[currency] = fx.load_rates(RAW_DIR / rates_file, currency)
+            shares = frame[(frame["club_id"] == club.club_id)
+                           & (frame["concept"] == "shares_outstanding")]
+            if shares.empty or shares.iloc[0]["is_gap"]:
+                raise valuation.ValuationError(f"{club.club_id}: falta shares_outstanding")
+            quotes[club.club_id] = valuation.quote(club, price, int(shares.iloc[0]["value_full"]),
+                                                   rates)
+        valuation_frame = valuation.to_frame(valuation.run(frame, metric_frame, quotes, season))
+        problems = valuation.validate(valuation_frame)
+        if problems:
+            raise valuation.ValuationError("la valoración no pasa pandera: " + "; ".join(problems))
+        database = PROCESSED_DIR / facts.DATABASE
+        facts.replace_season(database, "metrics", metric_frame, season)
+        facts.replace_season(database, "valuation", valuation_frame, season)
+    except (facts.FactsError, fx.FxError, manifest.ManifestError, market.MarketError,
+            valuation.ValuationError) as exc:
+        print(f"error: valoración: {exc}", file=sys.stderr)
+        return 1
+    print(f"Métricas y valoración {season}: {len(metric_frame)} métricas "
+          f"({(metric_frame['status'] == 'ok').sum()} con valor) y {len(valuation_frame)} filas de "
+          f"valoración; pandera OK. En millones de EUR.")
+    print("\n" + report.final_table(valuation_frame, metric_frame))
+    print("\n" + report.metrics_table(metric_frame))
+    print("\n" + report.listed_table(valuation_frame))
+    print("\n" + report.sensitivity_table(valuation_frame))
+    print("\n" + report.backtest_table(valuation_frame))
+    print(f"\n{database.relative_to(ROOT)}: tablas metrics y valuation")
     return 0
 
 
@@ -369,10 +456,12 @@ def main(argv: list[str] | None = None) -> int:
         ("download", "descarga las cuentas de Companies House de una temporada"),
         ("download-web", "descarga los PDFs de la web de los clubes (fuentes url)"),
         ("download-fx", "descarga los tipos de referencia diarios del BCE (monedas no EUR)"),
+        ("download-prices", "descarga con yfinance los cierres de los cotizados"),
         ("register-manual", "registra en el manifiesto los PDFs descargados a mano"),
         ("text-layer", "mide la capa de texto de los PDFs locales de config/sources.yaml"),
         ("extract", "cifras de la cuenta de resultados y del balance, con cuadres y recortes"),
         ("facts", "fact_financials en EUR (parquet y DuckDB), validada, y la tabla resumen"),
+        ("valuation", "métricas y valoración por comparables a las tablas metrics y valuation"),
     ):
         command = commands.add_parser(name, help=help_text)
         command.add_argument("--season", default="2024/25", help="temporada, p. ej. 2024/25")
@@ -395,8 +484,10 @@ def main(argv: list[str] | None = None) -> int:
         "download": download,
         "download-web": download_web,
         "download-fx": download_fx,
+        "download-prices": download_prices,
         "register-manual": register_manual,
         "text-layer": text_layer,
         "facts": build_facts,
+        "valuation": run_valuation,
     }
     return commands_by_name[args.command](args.season)

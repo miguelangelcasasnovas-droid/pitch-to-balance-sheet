@@ -21,6 +21,15 @@ class Club:
     entity: str
     companies_house_number: str | None
     fiscal_year_end: str  # MM-DD
+    framework: str = ""  # "FRS 102", "FRS 101" o "IFRS"
+    ticker: str | None = None
+    quote_currency: str | None = None  # moneda de cotización, p. ej. "GBp" (peniques)
+    quote_divisor: int = 1  # para pasar la cotización a la moneda: 100 en peniques
+
+    @property
+    def recognises_leases(self) -> bool:
+        """En FRS 102 los arrendamientos operativos no se reconocen en el balance."""
+        return self.framework != "FRS 102"
 
 
 def load_clubs(path: Path = CONFIG_DIR / "clubs.yaml") -> list[Club]:

@@ -199,18 +199,3 @@ def test_guarda_parquet_y_duckdb_y_sustituye_la_temporada(setup):
         cash = con.execute("SELECT value_eur, fx_method FROM fact_financials WHERE "
                            "club_id = 'chelsea' AND concept = 'cash'").fetchone()
     assert cash == (33_333, fx.CLOSING)
-
-
-def test_la_tabla_resumen_en_eur_y_un_hueco_deja_la_deuda_neta_en_hueco(setup):
-    frame = _build(setup, _rows())
-    rows = {row["club_id"]: row for row in facts.summary(frame)}
-    juventus = rows["juventus"]
-    assert juventus["net_debt"] == 270_000  # 300 + 10 − 40 (miles de euros)
-    assert juventus["net_debt_with_transfers"] == 390_000  # + 220 − 100
-    assert juventus["staff_to_revenue"] == 0.5
-    chelsea = rows["chelsea"]
-    assert chelsea["net_debt"] is None and chelsea["net_debt_missing"] == ["lease_liabilities"]
-    assert chelsea["gaps"] == ["lease_liabilities", "transfer_payables", "transfer_receivables"]
-    table = facts.summary_table(frame)
-    assert "| Juventus | EUR | 0.4 | 0.2 | 50.0% | 0.3 | 0.4 |" in table
-    assert "hueco (lease_liabilities)" in table

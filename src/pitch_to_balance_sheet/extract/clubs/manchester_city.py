@@ -15,7 +15,10 @@ Fase 3b, balance a 30/06/2025 (pág. 22) y sus notas:
 - pág. 47, notas 17 y 18: acreedores corrientes y no corrientes, con los arrendamientos y los
   payables arising from player transfers.
 - pág. 48, nota 19: el total de los arrendamientos.
-El balance no tiene deuda financiera: ni el balance ni las notas 17 y 18 tienen préstamos.
+Deuda financiera: el importe a más de un año con City Football Group USA LLC (nota 18), que
+tiene fecha de devolución (julio de 2030); los importes con el grupo a menos de un año son
+refacturaciones sin interés (nota 17) y van aparte, en related_party_financing (decisión del
+usuario del 29/09/2026).
 """
 
 from pitch_to_balance_sheet.extract import balance, mix
@@ -107,15 +110,20 @@ LEASE_MATURITY = {
     "after_five": r"^after more than five years$",
     "total": r"^total$",
 }
-GROUP_NOTE = (
-    "Los importes con otras sociedades de City Football Group no son deuda financiera: la nota "
-    "17 dice que los corrientes son refacturaciones de costes, sin interés, y la nota 18 no "
-    "llama préstamo a los no corrientes (102.031, con City Football Group USA LLC y vencimiento "
-    "en julio de 2030) ni dice que devenguen interés."
-)
 BORROWINGS_NOTE = (
-    "0, derivado: el balance (pág. 22) no tiene deuda financiera, y los acreedores de las notas "
-    "17 y 18 no incluyen préstamos. " + GROUP_NOTE
+    "A menos de un año, 0, derivado: el pasivo corriente del balance (pág. 22) menos todas sus "
+    "líneas, sin deuda financiera. A más de un año, los «Amounts owed to group undertakings» de "
+    "la nota 18 (pág. 47): «are owed to City Football Group USA LLC by the Company. These "
+    "balances are due in July 2030». Tienen fecha de devolución, así que son deuda financiera, "
+    "como los préstamos de KSE a Arsenal y de FSG a Liverpool (decisión del usuario del "
+    "29/09/2026). La nota no dice si devengan interés."
+)
+RELATED_NOTE = (
+    "Amounts owed to group undertakings a menos de un año (nota 17, pág. 47): «are primarily "
+    "recharges for head office costs by other subsidiaries within the Group. These balances are "
+    "due within one year and no interest is charged on the outstanding amounts». Sin interés ni "
+    "calendario de devolución: fuera de borrowings, solo para la variante de sensibilidad. El "
+    "club tiene además 366.927 a cobrar de sociedades del grupo (nota 16), también sin interés."
 )
 
 PLAYER_OTHER_INCOME_GAP = (
@@ -230,10 +238,17 @@ SPEC = ClubSpec(
             # Balance a 30/06/2025.
             FigureSpec("cash", (("bs_current_assets", "cash"),), "2025",
                        note="Cash at bank and in hand (pág. 22)."),
-            *balance.zero_from_lines("borrowings", (
-                ("bs_current_liabilities", "total", tuple(CURRENT_LIABILITIES)),
-                ("bs_noncurrent_liabilities", "total", ("payables",))), "2025",
-                BORROWINGS_NOTE),
+            FigureSpec("borrowings_current",
+                       (Part("bs_current_liabilities", "total"),
+                        *(Part("bs_current_liabilities", line, sign=-1)
+                          for line in CURRENT_LIABILITIES)),
+                       "2025", note=BORROWINGS_NOTE, expect_zero=True),
+            FigureSpec("borrowings_non_current", (("payables_noncurrent", "group"),), "2025",
+                       note=BORROWINGS_NOTE),
+            FigureSpec("borrowings", (("payables_noncurrent", "group"),), "2025",
+                       note=BORROWINGS_NOTE),
+            FigureSpec("related_party_financing", (("payables_current", "group"),), "2025",
+                       note=RELATED_NOTE),
             *balance.split("lease_liabilities", Part("payables_current", "lease"),
                            Part("payables_noncurrent", "lease"), "2025",
                            total=Part("leases", "total"),

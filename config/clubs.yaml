@@ -3,37 +3,47 @@
 #
 # fiscal_year_end: día y mes de cierre (MM-DD). La temporada es el año fiscal que cierra en ella:
 # un cierre a 31/05/2025 o a 30/06/2025 es la temporada 2024/25.
+# framework: marco contable de las cuentas usadas, con la página donde lo dice el informe. En FRS
+# 102 los arrendamientos operativos no van al balance (sección 9 del plan).
+# ticker, quote_currency y quote_divisor: los cotizados (plan, sección 6). La moneda la comprueba la
+# descarga de precios con la que devuelve yfinance.
 clubs:
   - club_id: arsenal
     name: Arsenal
     entity: Arsenal Holdings Limited
     companies_house_number: "04250459"
     fiscal_year_end: "05-31"
+    framework: "FRS 102"  # Companies House, pág. 27 (nota 1)
   - club_id: chelsea
     name: Chelsea
     entity: Chelsea FC Holdings Limited
     companies_house_number: "02536231"
     fiscal_year_end: "06-30"
+    framework: "FRS 102"  # Companies House, pág. 24 (nota 1)
   - club_id: liverpool
     name: Liverpool
     entity: The Liverpool Football Club and Athletic Grounds Limited
     companies_house_number: "00035668"
     fiscal_year_end: "05-31"
+    framework: "FRS 102"  # web del club, pág. 20 (nota 1)
   - club_id: manchester_city
     name: Manchester City
     entity: Manchester City Football Club Limited
     companies_house_number: "00040946"
     fiscal_year_end: "06-30"
+    framework: "FRS 101"  # PDF del club, pág. 26 (nota 1): FRS 101, con la NIIF 16
   - club_id: tottenham
     name: Tottenham Hotspur
     entity: Tottenham Hotspur Limited
     companies_house_number: "01706358"
     fiscal_year_end: "06-30"
+    framework: "IFRS"  # Companies House, pág. 20: UK-adopted international accounting standards
   - club_id: newcastle
     name: Newcastle United
     entity: Newcastle United Limited
     companies_house_number: "02529667"
     fiscal_year_end: "06-30"
+    framework: "FRS 102"  # Companies House, pág. 16 (informe del auditor)
   # Cotizados. Fuente: docs/plan.md, sección 6 ("Todos cierran el 30 de junio"), y la portada de
   # cada informe 2024/25 (Juventus: "al 30 giugno 2025"; Celtic: "year ended 30 June 2025").
   - club_id: juventus
@@ -41,32 +51,51 @@ clubs:
     entity: Juventus Football Club S.p.A.
     companies_house_number: null
     fiscal_year_end: "06-30"
+    framework: "IFRS"  # pág. 158: IFRS adoptadas por la Unión Europea
+    ticker: "JUVE.MI"
+    quote_currency: "EUR"
   - club_id: celtic
     name: Celtic
     entity: Celtic plc
     companies_house_number: "SC003487"  # plan, sección 7.1; sus cuentas no se bajan de ahí
     fiscal_year_end: "06-30"
+    framework: "IFRS"  # pág. 29: UK adopted international accounting standards
+    ticker: "CCP.L"
+    quote_currency: "GBp"
+    quote_divisor: 100  # cotiza en peniques: entre 100 para libras
   # Fuente: docs/plan.md, sección 6 (entidad y "Todos cierran el 30 de junio").
   - club_id: manchester_united
     name: Manchester United
     entity: Manchester United plc
     companies_house_number: null
     fiscal_year_end: "06-30"
+    framework: "IFRS"  # 20-F 2025, pág. 5: IFRS as issued by the IASB
+    ticker: "MANU"
+    quote_currency: "USD"
   - club_id: borussia_dortmund
     name: Borussia Dortmund
     entity: Borussia Dortmund GmbH & Co. KGaA
     companies_house_number: null
     fiscal_year_end: "06-30"
+    framework: "IFRS"  # pág. 132: IFRS, wie sie in der EU anzuwenden sind
+    ticker: "BVB.DE"
+    quote_currency: "EUR"
   - club_id: ajax
     name: Ajax
     entity: AFC Ajax NV
     companies_house_number: null
     fiscal_year_end: "06-30"
+    framework: "IFRS"  # pág. 85: IFRS Accounting Standards adoptadas por la Unión Europea
+    ticker: "AJAX.AS"
+    quote_currency: "EUR"
   - club_id: benfica
     name: Benfica
     entity: Sport Lisboa e Benfica - Futebol, SAD
     companies_house_number: null
     fiscal_year_end: "06-30"
+    framework: "IFRS"  # pág. 123: IFRS adoptadas por la Unión Europea
+    ticker: "SLBEN.LS"
+    quote_currency: "EUR"
   # Fuente: docs/plan.md, sección 6. Cierre: Lazio, "al 30.06.2025" en el título del ESEF; Porto,
   # posición financiera a 30/06/2024 y 30/06/2025 en su comunicado (docs/fuentes-pendientes.md).
   - club_id: lazio
@@ -74,8 +103,14 @@ clubs:
     entity: S.S. Lazio S.p.A.
     companies_house_number: null
     fiscal_year_end: "06-30"
+    framework: "IFRS"  # ESEF, pág. 146 del XHTML: IFRS adoptadas por la Comisión Europea
+    ticker: "SSL.MI"
+    quote_currency: "EUR"
   - club_id: porto
     name: FC Porto
     entity: Futebol Clube do Porto - Futebol, SAD
     companies_house_number: null
     fiscal_year_end: "06-30"
+    framework: "IFRS"  # pág. 121: Normas Internacionais de Relato Financeiro adotadas pela União Europeia
+    ticker: "FCP.LS"
+    quote_currency: "EUR"

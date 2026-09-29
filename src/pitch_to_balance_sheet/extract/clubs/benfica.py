@@ -17,8 +17,9 @@ Fase 3a:
 
 Fase 3b, balance al 30/06/2025:
 - pág. 117, Demonstração da posição financeira.
-- pág. 146, nota 7 (clientes e outros devedores), pág. 152, nota 12 (empréstimos obtidos), y
-  pág. 154, nota 13 (fornecedores e outros credores), no corrientes y corrientes.
+- pág. 146, nota 7 (clientes e outros devedores), pág. 152, nota 12 (empréstimos obtidos),
+  pág. 154, nota 13 (fornecedores e outros credores), y pág. 155, nota 14 (outros passivos, con
+  la cesión de créditos), no corrientes y corrientes.
 - pág. 151, nota 11: el número de acciones (categorías A y B). La SAD no tiene acciones propias
   (pág. 47).
 """
@@ -70,10 +71,19 @@ PAYABLES_CURRENT = {
     "other": r"^outros credores e operacoes diversas$",
     "discount": r"^atualizacao de dividas de terceiros$",
 }
+OTHER_LIABILITIES_CURRENT = {
+    "assignment": r"^cedencia de creditos$", "customer_advances": r"^adiantamento a clientes$",
+    "sales_advances": r"^adiantamentos por conta de vendas$",
+    "state": r"^estado e outros entes publicos$", "wages": r"^remuneracoes a liquidar$",
+    "accruals": r"^acrescimos de gastos$", "television": r"^direitos de televisao$",
+    "matches": r"^receitas de jogos$", "commercial": r"^atividades comerciais$",
+}
 BORROWINGS_NOTE = (
     "Empréstimos obtidos (pág. 117, nota 12): préstamos bancarios y empréstitos obligacionistas, "
-    "con los intereses devengados (1.301). La cesión de créditos futuros (22.078, en outros "
-    "passivos corrientes, nota 14) no entra: el club no la presenta como empréstimo."
+    "con los intereses devengados (1.301); más la cesión de créditos de la nota 14 (22.078, a "
+    "menos de un año; a más de un año, un guion): la cesión parcial y sin recurso de créditos "
+    "futuros del contrato de derechos de televisión con NOS (pág. 156), igual que el factoring "
+    "de Juventus y Porto (decisión del usuario del 29/09/2026)."
 )
 LEASE_GAP = (
     "no se publica: el balance (pág. 117) y las notas 12 a 14 no tienen ninguna línea de pasivos "
@@ -241,6 +251,17 @@ SPEC = ClubSpec(
                       sums=(Sum("total", tuple(PAYABLES_CURRENT)),)),
             TableSpec("equity", 151, YEARS, {"shares": r"^numero de acoes$"}, header=HEADER,
                       select=r"^numero de acoes$"),
+            TableSpec("other_liabilities_noncurrent", 155, YEARS,
+                      {"assignment": r"^cedencia de creditos$"}, header=HEADER,
+                      select=r"^adiantamentos por conta de vendas$",
+                      totals_after={"total": "assignment"},
+                      block=(r"^outros passivos - nao corrente$", r"^outros passivos - corrente$"),
+                      sums=(Sum("total", ("assignment",)),)),
+            TableSpec("other_liabilities_current", 155, YEARS, OTHER_LIABILITIES_CURRENT,
+                      header=HEADER, select=r"^adiantamentos por conta de vendas$",
+                      totals_after={"total": "commercial"},
+                      block=(r"^outros passivos - corrente$", r"^valores em milhares"),
+                      sums=(Sum("total", tuple(OTHER_LIABILITIES_CURRENT)),)),
         ),
         links=(
             *(Link(("staff", "staff_costs_total", year), ("pnl", "staff", year), sign=-1)
@@ -259,7 +280,9 @@ SPEC = ClubSpec(
                   ("receivables_noncurrent", "bs_noncurrent_assets", "receivables"),
                   ("receivables_current", "bs_current_assets", "receivables"),
                   ("payables_noncurrent", "bs_noncurrent_liabilities", "payables"),
-                  ("payables_current", "bs_current_liabilities", "payables"))
+                  ("payables_current", "bs_current_liabilities", "payables"),
+                  ("other_liabilities_noncurrent", "bs_noncurrent_liabilities", "other"),
+                  ("other_liabilities_current", "bs_current_liabilities", "other"))
               for year in YEARS),
         ),
         gaps={**MIX.gaps(), **balance.gaps("lease_liabilities", LEASE_GAP)},
@@ -285,8 +308,11 @@ SPEC = ClubSpec(
             # Balance al 30/06/2025.
             FigureSpec("cash", (("bs_current_assets", "cash"),), "2025",
                        note="Caixa e equivalentes de caixa (pág. 117, nota 10)."),
-            *balance.split("borrowings", Part("bs_current_liabilities", "loans"),
-                           Part("bs_noncurrent_liabilities", "loans"), "2025",
+            *balance.split("borrowings",
+                           (Part("bs_current_liabilities", "loans"),
+                            Part("other_liabilities_current", "assignment")),
+                           (Part("bs_noncurrent_liabilities", "loans"),
+                            Part("other_liabilities_noncurrent", "assignment")), "2025",
                            note=BORROWINGS_NOTE),
             *balance.split("transfer_payables", Part("payables_current", "clubs"),
                            (Part("payables_noncurrent", "clubs"),

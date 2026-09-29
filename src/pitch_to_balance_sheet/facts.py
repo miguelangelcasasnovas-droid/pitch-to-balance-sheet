@@ -290,88 +290,37 @@ def write(frame: pd.DataFrame, season: str, directory: Path = PROCESSED_DIR) -> 
     with duckdb.connect() as con:
         con.register("facts", frame)
         con.execute(f"COPY (SELECT * FROM facts) TO '{path}' (FORMAT parquet)")
-    with duckdb.connect(str(database)) as con:
-        con.register("facts", frame)
-        con.execute("CREATE TABLE IF NOT EXISTS fact_financials AS SELECT * FROM facts "
-                    "LIMIT 0")
-        con.execute("DELETE FROM fact_financials WHERE season = ?", [season])
-        con.execute("INSERT INTO fact_financials SELECT * FROM facts")
+    replace_season(database, "fact_financials", frame, season)
     return [path, database]
 
 
-# ---------------------------------------------------------------- tabla resumen en EUR
+def replace_season(database: Path, table: str, frame: pd.DataFrame, season: str) -> None:
+    """Sustituye en la tabla las filas de la temporada; las de otras temporadas se conservan. Si
+    las columnas de la tabla han cambiado y solo tiene esta temporada, se rehace; si tiene otras,
+    es un error, para no perderlas."""
+    with duckdb.connect(str(database)) as con:
+        con.register("rows", frame)
+        existing = [row[0] for row in con.execute(
+            "SELECT column_name FROM information_schema.columns WHERE table_name = ? "
+            "ORDER BY ordinal_position", [table]).fetchall()]
+        if existing and existing != list(frame.columns):
+            others = con.execute(f"SELECT count(*) FROM {table} WHERE season <> ?",
+                                 [season]).fetchone()[0]
+            if others:
+                raise FactsError(f"{database.name}: la tabla {table} tiene otras columnas y "
+                                 f"{others} filas de otras temporadas; no se sustituye")
+            con.execute(f"DROP TABLE {table}")
+        con.execute(f"CREATE TABLE IF NOT EXISTS {table} AS SELECT * FROM rows LIMIT 0")
+        con.execute(f"DELETE FROM {table} WHERE season = ?", [season])
+        con.execute(f"INSERT INTO {table} SELECT * FROM rows")
 
 
-SUMMARY_CONCEPTS = ("revenue_ex_player_trading", "staff_costs", "borrowings", "lease_liabilities",
-                    "cash", "transfer_payables", "transfer_receivables")
-
-
-def _eur(values: dict, concept: str):
-    value = values.get(concept)
-    return None if value is None or pd.isna(value) else int(value)
-
-
-def summary(frame: pd.DataFrame) -> list[dict]:
-    """Por club: ingresos sin traspasos, personal, salarios/ingresos, deuda neta y deuda neta con
-    traspasos netos, en EUR. Una cifra que necesita un hueco es hueco, con el concepto que falta."""
-    clubs = [club.club_id for club in load_clubs()]
-    names = {club.club_id: club.name for club in load_clubs()}
-    rows = []
-    order = sorted(frame["club_id"].unique(),
-                   key=lambda club_id: clubs.index(club_id) if club_id in clubs else len(clubs))
-    for club_id in order:
-        group = frame[frame["club_id"] == club_id]
-        values = dict(zip(group["concept"], group["value_eur"], strict=True))
-        gaps = set(group.loc[group["is_gap"], "concept"])
-
-        def total(*terms, _values=values, _gaps=gaps):
-            missing = [concept for _, concept in terms
-                       if concept in _gaps or _eur(_values, concept) is None]
-            if missing:
-                return None, missing
-            return sum(sign * _eur(_values, concept) for sign, concept in terms), []
-
-        revenue, _ = total((1, "revenue_ex_player_trading"))
-        staff, _ = total((1, "staff_costs"))
-        net_debt, missing = total((1, "borrowings"), (1, "lease_liabilities"), (-1, "cash"))
-        with_transfers, missing_t = total((1, "borrowings"), (1, "lease_liabilities"),
-                                          (-1, "cash"), (1, "transfer_payables"),
-                                          (-1, "transfer_receivables"))
-        rows.append({
-            "club_id": club_id, "club": names.get(club_id, club_id),
-            "currency_reported": group["currency_reported"].replace("", pd.NA).dropna().iloc[0],
-            "revenue_ex_player_trading": revenue, "staff_costs": staff,
-            "staff_to_revenue": None if revenue in (None, 0) or staff is None
-            else staff / revenue,
-            "net_debt": net_debt, "net_debt_missing": missing,
-            "net_debt_with_transfers": with_transfers,
-            "net_debt_with_transfers_missing": missing_t,
-            "gaps": [concept for concept in SUMMARY_CONCEPTS if concept in gaps],
-            "other_gaps": len(gaps - set(SUMMARY_CONCEPTS)),
-        })
-    return rows
-
-
-def _millions(value: int | None, missing: list[str] | None = None) -> str:
-    if value is None:
-        return "hueco" + (f" ({', '.join(missing)})" if missing else "")
-    text = f"{abs(value) / 1_000_000:,.1f}"
-    return f"({text})" if value < 0 else text
-
-
-def summary_table(frame: pd.DataFrame) -> str:
-    """La tabla resumen en millones de EUR; la deuda neta negativa (caja neta) va entre
-    paréntesis."""
-    lines = ["| Club | Moneda original | Ingresos sin traspasos | Personal | Salarios / ingresos "
-             "| Deuda neta | Deuda neta con traspasos netos | Huecos de la tabla | Otros huecos |",
-             "|" + " --- |" * 9]
-    for row in summary(frame):
-        ratio = ("hueco" if row["staff_to_revenue"] is None
-                 else f"{row['staff_to_revenue'] * 100:.1f}%")
-        lines.append(
-            f"| {row['club']} | {row['currency_reported']} | "
-            f"{_millions(row['revenue_ex_player_trading'])} | {_millions(row['staff_costs'])} | "
-            f"{ratio} | {_millions(row['net_debt'], row['net_debt_missing'])} | "
-            f"{_millions(row['net_debt_with_transfers'], row['net_debt_with_transfers_missing'])}"
-            f" | {', '.join(row['gaps']) or '—'} | {row['other_gaps']} |")
-    return "\n".join(lines)
+def read(season: str, directory: Path = PROCESSED_DIR) -> pd.DataFrame:
+    """fact_financials de una temporada, desde su parquet."""
+    path = facts_path(season, directory)
+    if not path.exists():
+        raise FactsError(f"falta {path}: ejecuta antes facts")
+    with duckdb.connect() as con:
+        frame = con.execute(f"SELECT * FROM '{path}'").df()
+    return frame.astype({"value_reported": "Int64", "value_full": "Int64", "value_eur": "Int64",
+                         "source_page": "Int64", "is_gap": bool, "is_derived": bool})

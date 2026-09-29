@@ -33,9 +33,12 @@ BALANCE = (
     "cash",
 )
 SHARES = ("shares_outstanding",)
+# Saldos con sociedades vinculadas que no cumplen la definición de deuda financiera (sin interés ni
+# calendario de devolución): fuera de borrowings, solo para una variante de sensibilidad.
+RELATED = ("related_party_financing",)
 
 KINDS = {**dict.fromkeys(INCOME, FLOW), **dict.fromkeys(BALANCE, STOCK),
-         **dict.fromkeys(SHARES, COUNT)}
+         **dict.fromkeys(RELATED, STOCK), **dict.fromkeys(SHARES, COUNT)}
 
 # Unidad de value_reported -> multiplicador a unidades completas (value_full).
 MULTIPLIERS = {"units": 1, "thousands": 1000, "shares": 1, "thousand_shares": 1000,

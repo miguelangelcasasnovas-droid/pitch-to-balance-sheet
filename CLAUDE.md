@@ -46,4 +46,6 @@ uv run python -m pitch_to_balance_sheet extract [--club X]  # cifras, cuadres y 
 uv run python -m pitch_to_balance_sheet extract --reocr     # ídem, volviendo a pasar Vision
 uv run python -m pitch_to_balance_sheet download-fx       # tipos de referencia del BCE
 uv run python -m pitch_to_balance_sheet facts             # fact_financials en EUR (parquet y DuckDB)
+uv run python -m pitch_to_balance_sheet download-prices   # cierres de los cotizados (yfinance)
+uv run python -m pitch_to_balance_sheet valuation         # métricas y valoración (tablas metrics y valuation)
 ```
