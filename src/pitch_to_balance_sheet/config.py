@@ -23,6 +23,7 @@ class Club:
     fiscal_year_end: str  # MM-DD
     framework: str = ""  # "FRS 102", "FRS 101" o "IFRS"
     ticker: str | None = None
+    exchange: str | None = None  # bolsa donde cotiza, de donde sale su precio
     quote_currency: str | None = None  # moneda de cotización, p. ej. "GBp" (peniques)
     quote_divisor: int = 1  # para pasar la cotización a la moneda: 100 en peniques
 

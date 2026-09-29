@@ -62,7 +62,7 @@ football-club-finance/
 │   └── processed/              # parquet + football.duckdb
 ├── src/pitch_to_balance_sheet/
 │   ├── cli.py                  # download | extract | validate | build
-│   ├── sources/                # yfinance, companies_house, ir_reports, ecb_fx
+│   ├── sources/                # companies_house, ir_reports, ecb_fx (precios de mercado: manuales)
 │   ├── extract/                # utilidades PDF + un módulo por club
 │   ├── schemas.py              # esquemas pandera
 │   ├── fx.py                   # conversión a EUR
@@ -84,7 +84,7 @@ football-club-finance/
 ```mermaid
 flowchart TD
     R["data/raw + manifest.csv<br/>URL, fecha de descarga y sha256"]
-    A["yfinance: precios"] --> R
+    A["Precios de cierre, a mano<br/>(robots.txt de Yahoo lo prohíbe)"] --> R
     B["Informes anuales PDF"] --> R
     C["Companies House API"] --> R
     D["BCE: tipos de cambio"] --> R
@@ -126,7 +126,7 @@ Conceptos, lista cerrada en `src/pitch_to_balance_sheet/concepts.py` (actualizad
 
 Columnas añadidas a las de la tabla: `value_full` (la cifra en unidades completas), `fx_source_file` y `fx_note` (qué tipos y cuántos días), `components`, `column`, `crop`, `extraction_method`, `ocr_note`, `is_derived`, `included_in_staff_costs` y `definition_note`.
 
-Tablas de apoyo: `dim_club` (de `clubs.yaml`), `fx_rates` (BCE), `market_prices` (yfinance) y `line_item_map` (de `line_items.yaml`).
+Tablas de apoyo: `dim_club` (de `clubs.yaml`), `fx_rates` (BCE), `market_prices` (CSV manual, `config/market.yaml`) y `line_item_map` (de `line_items.yaml`).
 
 Convenciones:
 
@@ -149,7 +149,7 @@ Convenciones:
 
 ## 6. Clubes cotizados
 
-Los 8 tickers existen en yfinance y devolvieron precio del 25/09/2026. Solo Manchester United y Ajax tienen ya enlazado y descargable el PDF de 2025/26, y en 5 clubes el enlace no está en el HTML o la web bloquea la descarga automática.
+Los 8 tickers existen en yfinance y devolvieron precio del 25/09/2026 (verificación de la fase 0; yfinance se retiró del proyecto el 29/09/2026 porque el robots.txt de sus APIs lo prohíbe, y los precios se toman a mano de cada bolsa). Solo Manchester United y Ajax tienen ya enlazado y descargable el PDF de 2025/26, y en 5 clubes el enlace no está en el HTML o la web bloquea la descarga automática.
 
 | Club | Ticker | Cotiza en | Precio 25/09/2026 | Informe anual | Último FY enlazado | Idioma · moneda |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -334,14 +334,15 @@ En la fase 3 cada fórmula tiene un test con un caso calculado a mano, y el dash
 
 **Cálculo, fijado en la fase 3c (29/09/2026):**
 
-- **Precios:** `download-prices` guarda con yfinance el histórico diario de cada cotizado hasta la fecha de valoración en `data/raw/market/`, con su entrada en el manifiesto. Se usa el cierre sin ajustar (Close) del 30/06/2025 o del último día de cotización anterior (como mucho 5 días antes), redondeado a 4 decimales. La moneda que devuelve yfinance tiene que ser la de `config/clubs.yaml`. El robots.txt de query1 y query2.finance.yahoo.com dice `Disallow: /`: se usa yfinance por decisión del usuario, anotado.
+- **Precios, decidido por el usuario el 29/09/2026:** no se descargan. El robots.txt de las APIs de Yahoo que usa yfinance (query1 y query2.finance.yahoo.com) dice `Disallow: /`, y la regla de la sección 2 pide entonces descarga manual documentada. El cierre de cada ticker se toma a mano de la web de su bolsa (la de `config/clubs.yaml`) y se escribe en `data/raw/manual/prices_2025-06-30.csv`, con las columnas ticker, date, close, currency, unit (GBp, GBP, USD o EUR), source_url, source_name, retrieved_at y note; se registra con `register-manual`. La plantilla, con los 8 tickers, está en `config/plantillas/prices_2025-06-30.csv`, y la fecha de valoración, el archivo y los valores ilíquidos, en `config/market.yaml`. Se usa el cierre del 30/06/2025 o del último día de cotización anterior (como mucho 5 días antes), en la unidad de cotización del club. Si falta el archivo o una fila no cumple, `valuation` da error y dice de dónde sacar cada precio.
+- **Ilíquidos:** un valor sin negociación el día del precio se marca en la valoración, sin sacarlo de los pares: FC Porto, sin negociación el 30/06/2025 (decisión del usuario del 29/09/2026).
 - **EUR:** Celtic cotiza en peniques (entre 100) y Manchester United en dólares; se convierten con el tipo del BCE del mismo día (`download-fx` baja también la serie USD).
 - **Capitalización** = precio en EUR × `shares_outstanding` del informe; en Manchester United, clases A y B al precio de la A. **EV** = capitalización + `net_debt`. **Múltiplo** = EV / `revenue_ex_player_trading`. Todo en EUR.
 - **Percentiles:** interpolación lineal entre los múltiplos ordenados (el método por defecto de pandas y numpy): con n múltiplos, el percentil q está en la posición (n − 1) × q.
 - **No cotizados:** EV implícito = percentil × ingresos, redondeado al euro; equity implícito = EV implícito − `net_debt`. Sin prima de control.
 - **Sensibilidades** (escenarios de la tabla `valuation`): `base` (los 8 cotizados y `net_debt`), `large_peers` (Manchester United, Juventus y Borussia Dortmund), `incl_transfers` (EV y equity con `net_debt_incl_transfers`; un par sin el dato sale del cálculo, y un objetivo sin el dato tiene EV implícito pero su equity es hueco) e `incl_related_party` (el equity de Manchester City con `related_party_financing`).
-- **Prueba sobre los cotizados:** cada cotizado recibe también un EV implícito, con los pares que lo incluyen y sin él; su desviación es EV real / EV implícito mediano − 1.
-- **Almacenamiento:** tablas `metrics` (una fila por club, temporada y métrica, con `status` ok, gap o not_comparable y su motivo) y `valuation` (una fila por club, temporada y escenario) en `football.duckdb`, validadas con pandera. Las escribe `python -m pitch_to_balance_sheet valuation`.
+- **Prueba sobre los cotizados:** cada cotizado recibe también un EV implícito. La versión principal es sin el propio club (leave-one-out, decisión del usuario del 29/09/2026): percentiles de los demás pares, desviación = EV real / EV implícito mediano − 1 y si cae dentro de P25–P75. Con el propio club, como referencia.
+- **Almacenamiento:** tablas `metrics` (una fila por club, temporada y métrica, con `status` ok, gap o not_comparable y su motivo) y `valuation` (una fila por club, temporada y escenario, con la fuente de cada precio) en `football.duckdb`, validadas con pandera. `metrics` la escribe `facts`, porque no depende de los precios; `valuation`, el comando `valuation`.
 
 ## 10. Riesgos y mitigaciones
 
@@ -355,7 +356,7 @@ El riesgo que más puede cambiar el proyecto es que las cuentas inglesas sean im
 | Clasificar ingresos es una decisión | Cada club agrupa sus ingresos a su manera | `line_items.yaml` con cada partida original, su destino y el motivo. Una partida sin mapear rompe la build |
 | El SCR público no es el de la UEFA | Salarios de todo el personal, año fiscal y sin ajustes del anexo K | Nombre "aproximado", fórmula publicada y contraste con los sancionados por la UEFA. Nunca se dice que un club incumple |
 | Pocos comparables y poco líquidos | 8 cotizados, casi todos pequeños y con accionista de control, como [Exor en Juventus](https://www.exor.com/press-releases/2025-12-13/exor-board-unanimously-rejects-tethers-proposal-acquire-exors-controlling). Solo `MANU` juega en la Premier | Rango en vez de punto, sensibilidad por grupo de pares y aviso de que no hay prima de control |
-| yfinance es frágil | No es una API oficial. Para `MANU` no devolvió nombre ni acciones y con pandas 3 lanza avisos de funciones obsoletas | Solo precios, con fecha de descarga. Acciones desde los informes, versiones fijadas y CI sin red |
+| Precios de mercado sin descarga automática | yfinance no es una API oficial y el robots.txt de sus APIs (query1 y query2.finance.yahoo.com) prohíbe todo | Retirado el 29/09/2026. Precios a mano, de la web de cada bolsa, con URL, fuente y fecha por fila; acciones desde los informes |
 | Python del Mac sin verificar | La fase 0 midió la máquina virtual Linux de Cowork (Python 3.10.12), no el Mac. El brief pide 3.11 o superior | Primer paso de la fase 1: `python3 --version` en el Mac. Si es menor de 3.11, se decide con el usuario cómo instalarlo sin tocar nada global |
 | El hook de gitleaks necesita Go | Probado en un entorno sin Go: pre-commit descargó el suyo (329 MB de caché) y bloqueó un commit con dos claves falsas | `PRE_COMMIT_HOME` dentro del proyecto. Si pesa demasiado, binario de gitleaks en `.tools/` con un hook local |
 | Derechos de autor y uso de informes de terceros | Informes anuales, Money League y UEFA tienen copyright | No se suben PDFs. Fixtures de una página con atribución. De Deloitte y UEFA, solo totales citados de la edición pública y nada de material interno |
@@ -377,7 +378,7 @@ Versiones publicadas a 25/09/2026, comprobadas en un entorno de prueba en la nub
 | pandera | 0.33.1 | Validó un esquema de prueba con pandas 3.0.6 |
 | pdfplumber | 0.11.10 | |
 | duckdb | 1.5.5 | |
-| yfinance | 1.7.0 | Publicada el 26/08/2026. Sustituye a la 0.2.66 (17/09/2025), que daba avisos de funciones obsoletas con pandas 3 |
+| yfinance | — | Retirado el 29/09/2026 (ver riesgos): se fijó la 1.7.0 en la fase 1 |
 | requests | 2.34.2 | |
 | plotly | 7.1.0 | |
 | streamlit | 1.64.0 | |

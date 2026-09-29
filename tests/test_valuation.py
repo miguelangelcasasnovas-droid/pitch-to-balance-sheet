@@ -22,21 +22,26 @@ def test_percentiles_con_interpolacion_lineal():
         valuation.quantile([], 0.5)
 
 
-def _price(close, currency):
-    return Price("X", DAY, Decimal(close), currency, 100, "x.csv", "cierre del día de valoración")
+def _price(close, unit):
+    currency = "GBP" if unit == "GBp" else unit
+    return Price("X", DAY, Decimal(close), currency, unit, "https://bolsa.invalid", "Bolsa",
+                 "2026-09-29", "")
 
 
 def test_precio_en_eur_con_el_tipo_del_mismo_dia_y_peniques_entre_100():
     rates = {"GBP": {DAY: Decimal("0.8555")}, "USD": {DAY: Decimal("1.172")}}
-    celtic = Club("celtic", "Celtic", "", None, "06-30", "IFRS", "CCP.L", "GBp", 100)
+    celtic_in_pounds = Club("celtic", "Celtic", "", None, "06-30", "IFRS", "CCP.L", "LSE", "GBP")
+    with pytest.raises(valuation.ValuationError, match="viene en GBp"):
+        valuation.quote(celtic_in_pounds, _price("195", "GBp"), 1000, rates)
+    celtic = Club("celtic", "Celtic", "", None, "06-30", "IFRS", "CCP.L", "LSE", "GBp", 100)
     q = valuation.quote(celtic, _price("195", "GBp"), 1000, rates)
     # 195 peniques = 1,95 libras; 1,95 / 0,8555 = 2,27937... euros; × 1.000 acciones.
     assert (round(q.price_eur, 5), q.market_cap_eur, q.fx_date) == (Decimal("2.27937"), 2279,
                                                                     "2025-06-30")
-    manu = Club("manchester_united", "MU", "", None, "06-30", "IFRS", "MANU", "USD")
+    manu = Club("manchester_united", "MU", "", None, "06-30", "IFRS", "MANU", "NYSE", "USD")
     q = valuation.quote(manu, _price("17.81", "USD"), 100, rates)
     assert q.market_cap_eur == 1520  # 17,81 / 1,172 = 15,1962... × 100
-    juve = Club("juventus", "J", "", None, "06-30", "IFRS", "JUVE.MI", "EUR")
+    juve = Club("juventus", "J", "", None, "06-30", "IFRS", "JUVE.MI", "Borsa", "EUR")
     q = valuation.quote(juve, _price("3.088", "EUR"), 1000, rates)
     assert (q.fx_rate, q.market_cap_eur) == (1, 3088)
 
@@ -72,7 +77,7 @@ def _inputs():
 
 def test_valoracion_por_comparables_calculada_a_mano():
     facts, metric_frame, quotes = _inputs()
-    frame = valuation.to_frame(valuation.run(facts, metric_frame, quotes))
+    frame = valuation.to_frame(valuation.run(facts, metric_frame, quotes, DAY))
     assert valuation.validate(frame) == []
     base = frame[frame["scenario"] == "base"].set_index("club_id")
     assert base.loc["juventus", "ev_eur"] == 1200 and base.loc["juventus", "ev_to_revenue"] == 3.0
@@ -85,19 +90,23 @@ def test_valoracion_por_comparables_calculada_a_mano():
     assert [arsenal[f"ev_implied_{p}"] for p in ("p25", "p50", "p75")] == [875, 1250, 1875]
     assert [arsenal[f"equity_implied_{p}"] for p in ("p25", "p50", "p75")] == [575, 950, 1575]
     assert "Sin prima de control" in arsenal["note"]
-    # Prueba sobre Juventus: EV real 1.200 frente a 1,25 × 400 = 500: +140 %, fuera de 350–750.
-    # Sin la propia Juventus, la mediana de 0,5 1,0 1,5 es 1,0: 400, +200 %.
+    # Prueba sobre Juventus, sin la propia Juventus (la principal): múltiplos 0,5 1,0 1,5, con
+    # P25 0,75, mediana 1,0 y P75 1,25; por 400 de ingresos, 300 / 400 / 500. EV real 1.200:
+    # +200 % frente a la mediana, fuera del rango. Con Juventus: 1,25 × 400 = 500, +140 %.
     juventus = base.loc["juventus"]
+    assert [juventus[f"backtest_multiple_{p}"] for p in ("p25", "p50", "p75")] == [0.75, 1.0,
+                                                                                  1.25]
+    assert [juventus[f"backtest_ev_implied_{p}"] for p in ("p25", "p50", "p75")] == [300, 400,
+                                                                                    500]
+    assert juventus["backtest_deviation"] == pytest.approx(2.0)
+    assert not juventus["backtest_within_p25_p75"]
     assert juventus["ev_implied_p50"] == 500
-    assert juventus["deviation_vs_p50"] == pytest.approx(1.4)
-    assert not juventus["within_p25_p75"]
-    assert juventus["multiple_p50_excl_self"] == 1.0
-    assert juventus["deviation_vs_p50_excl_self"] == pytest.approx(2.0)
+    assert juventus["deviation_incl_self"] == pytest.approx(1.4)
 
 
 def test_solo_pares_grandes_y_un_par_sin_dato_sale_del_calculo():
     facts, metric_frame, quotes = _inputs()
-    frame = valuation.to_frame(valuation.run(facts, metric_frame, quotes)).set_index(
+    frame = valuation.to_frame(valuation.run(facts, metric_frame, quotes, DAY)).set_index(
         ["scenario", "club_id"])
     # Entre los pares grandes solo está Juventus: todos los percentiles son su múltiplo, 3,0.
     assert frame.loc[("large_peers", "arsenal"), "ev_implied_p50"] == 3000
@@ -117,11 +126,11 @@ def test_un_escenario_sin_ningun_par_con_datos_es_error():
     facts, metric_frame, quotes = _inputs()
     metric_frame = metric_frame[metric_frame["metric"] != "net_debt_incl_transfers"]
     with pytest.raises(valuation.ValuationError, match="no hay múltiplos"):
-        valuation.run(facts, metric_frame, quotes)
+        valuation.run(facts, metric_frame, quotes, DAY)
 
 
 def test_sin_cotizacion_de_un_cotizado_es_error():
     facts, metric_frame, quotes = _inputs()
     del quotes["ajax"]
     with pytest.raises(valuation.ValuationError, match="ajax: falta su cotización"):
-        valuation.run(facts, metric_frame, quotes)
+        valuation.run(facts, metric_frame, quotes, DAY)

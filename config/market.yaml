@@ -1,0 +1,16 @@
+# Precios de mercado de los cotizados a la fecha de valoración (plan, sección 9).
+#
+# No se descargan: el robots.txt de las APIs de Yahoo que usa yfinance prohíbe la descarga
+# automática, y el plan (sección 2) pide entonces descarga manual documentada (decisión del usuario
+# del 29/09/2026). El cierre de cada ticker se toma a mano de la web de su bolsa, se escribe en
+# prices_file con su fuente y se registra con register-manual. La plantilla, con los 8 tickers,
+# está en template.
+#
+# illiquid: tickers sin negociación ese día, que se marcan en la valoración (decisión del usuario
+# del 29/09/2026). Hay que confirmarlo con la fuente del precio.
+"2024/25":
+  valuation_date: "2025-06-30"
+  prices_file: manual/prices_2025-06-30.csv
+  template: config/plantillas/prices_2025-06-30.csv
+  illiquid:
+    FCP.LS: sin negociación el 30/06/2025 (volumen 0)

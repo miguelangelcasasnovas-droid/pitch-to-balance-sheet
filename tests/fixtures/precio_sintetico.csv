@@ -1,3 +1,0 @@
-ticker,date,open,high,low,close,close_raw,adj_close,volume,currency,exchange,timezone
-SINT.MI,2031-06-26,1.0000,1.1000,0.9000,1.0500,1.0499999523162842,1.0500,1000,EUR,MIL,Europe/Rome
-SINT.MI,2031-06-27,1.0500,1.1000,1.0000,1.0800,1.0800000429153442,1.0800,500,EUR,MIL,Europe/Rome

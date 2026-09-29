@@ -1,68 +1,110 @@
-"""Precios de mercado con un CSV sintético y un yfinance simulado: sin red."""
+"""Precios de mercado bajados a mano: el CSV, sus comprobaciones y la plantilla. Sin red."""
 
+import csv
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
 
-import pandas as pd
 import pytest
 
 from pitch_to_balance_sheet import market
-from pitch_to_balance_sheet.config import Club
+from pitch_to_balance_sheet.config import ROOT, Club, load_clubs
 
-FIXTURE = Path(__file__).parent / "fixtures" / "precio_sintetico.csv"  # 26 y 27/06/2031
-CLUB = Club("sintetico", "Sintético", "", None, "06-30", "IFRS", "SINT.MI", "EUR")
-
-
-def test_cierre_del_ultimo_dia_de_cotizacion_anterior_a_la_fecha():
-    # El 30/06/2031 es lunes: el último cierre anterior es el del viernes 27.
-    price = market.load_price(FIXTURE, CLUB, date(2031, 6, 30))
-    assert (price.date, price.close, price.currency) == (date(2031, 6, 27), Decimal("1.08"),
-                                                         "EUR")
-    assert "último día de cotización antes del 30/06/2031" in price.note
-    assert market.load_price(FIXTURE, CLUB, date(2031, 6, 26)).close == Decimal("1.05")
-
-
-def test_un_cierre_demasiado_antiguo_o_de_otro_valor_es_error():
-    with pytest.raises(market.MarketError, match="más de 5 días"):
-        market.load_price(FIXTURE, CLUB, date(2031, 7, 10))
-    with pytest.raises(market.MarketError, match="no hay cotización"):
-        market.load_price(FIXTURE, CLUB, date(2031, 6, 1))
-    other = Club("otro", "Otro", "", None, "06-30", "IFRS", "OTRO.MI", "EUR")
-    with pytest.raises(market.MarketError, match="no es de OTRO.MI"):
-        market.load_price(FIXTURE, other, date(2031, 6, 30))
+FIXTURE = Path(__file__).parent / "fixtures" / "precios_manuales_sinteticos.csv"
+CLUBS = [
+    Club("sint", "Sintético", "", None, "06-30", "IFRS", "SINT.MI", "Bolsa sintética", "EUR"),
+    Club("sintl", "Sintético L", "", None, "06-30", "IFRS", "SINT.L", "Bolsa de Londres", "GBp",
+         100),
+    Club("otro", "No cotizado", "", None, "06-30", "FRS 102"),
+]
+CONFIG = market.MarketConfig("2030/31", date(2031, 6, 30), "manual/precios.csv",
+                             "config/plantillas/precios.csv",
+                             {"SINT.L": "sin negociación el 30/06/2031"})
 
 
-class _Ticker:
-    def __init__(self, ticker, currency="GBp"):
-        self.ticker = ticker
-        self.history_metadata = {"currency": currency, "exchangeName": "LSE",
-                                 "exchangeTimezoneName": "Europe/London"}
-
-    def history(self, start, end, auto_adjust, actions):
-        assert not auto_adjust  # el cierre sin ajustar
-        index = pd.DatetimeIndex(["2025-06-27", "2025-06-30"]).tz_localize("Europe/London")
-        return pd.DataFrame({"Open": [195.0, 195.0], "High": [196.0, 195.0],
-                             "Low": [190.0, 195.0], "Close": [195.00000001, 194.9999999],
-                             "Adj Close": [195.0, 195.0], "Volume": [3322, 0]}, index=index)
-
-
-def test_la_descarga_guarda_el_historico_y_su_entrada_del_manifiesto(tmp_path):
-    celtic = Club("celtic", "Celtic", "", None, "06-30", "IFRS", "CCP.L", "GBp", 100)
-    entry = market.download_price(celtic, tmp_path, ticker_factory=_Ticker)
-    assert entry.file == "market/ccp.l_2025-06-30.csv"
-    assert entry.url.startswith("https://query2.finance.yahoo.com/v8/finance/chart/CCP.L?")
-    price = market.load_price(tmp_path / entry.file, celtic)
-    # Se redondea a 4 decimales; el valor de Yahoo queda en close_raw.
-    assert (price.close, price.volume) == (Decimal("195.0000"), 0)
-    assert "volumen 0" in price.note
-    assert "194.9999999" in (tmp_path / entry.file).read_text()
+def test_lee_cada_precio_con_su_fuente_y_marca_el_cierre_anterior_y_el_iliquido():
+    prices = market.load_prices(FIXTURE, CLUBS, CONFIG)
+    sint = prices["sint"]
+    # El 30/06/2031 es lunes: el cierre es del viernes 27.
+    assert (sint.date, sint.close, sint.currency, sint.unit) == (date(2031, 6, 27),
+                                                                 Decimal("1.08"), "EUR", "EUR")
+    assert sint.source_url == "https://bolsa.invalid/sint/historico"
+    assert "último día de cotización antes del 30/06/2031" in sint.note and not sint.illiquid
+    london = prices["sintl"]
+    assert (london.close, london.unit, london.currency) == (Decimal("195"), "GBp", "GBP")
+    assert london.illiquid == "sin negociación el 30/06/2031"
+    assert london.note == "cierre oficial; ilíquido: sin negociación el 30/06/2031"
 
 
-def test_si_la_moneda_no_es_la_esperada_es_error(tmp_path):
-    celtic = Club("celtic", "Celtic", "", None, "06-30", "IFRS", "CCP.L", "GBP")
-    with pytest.raises(market.MarketError, match="moneda 'GBp'"):
-        market.download_price(celtic, tmp_path, ticker_factory=_Ticker)
+def _write(tmp_path, rows):
+    path = tmp_path / "precios.csv"
+    with path.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=market.COLUMNS, lineterminator="\n")
+        writer.writeheader()
+        writer.writerows(rows)
+    return path
+
+
+def _rows():
+    with FIXTURE.open(newline="", encoding="utf-8") as f:
+        return list(csv.DictReader(f))
+
+
+@pytest.mark.parametrize(("change", "error"), [
+    ({"close": ""}, "sin rellenar: close"),
+    ({"source_url": "bolsa.invalid"}, "source_url tiene que ser una URL"),
+    ({"unit": "GBP", "currency": "GBP"}, "la unidad es GBP y SINT.L cotiza en GBp"),
+    ({"currency": "EUR"}, "la moneda de GBp es GBP, no EUR"),
+    ({"date": "2031-07-01"}, "después de la fecha de valoración"),
+    ({"date": "2031-06-20"}, "más de 5 días antes"),
+    ({"close": "-1"}, "positivo"),
+])
+def test_una_fila_mal_rellenada_es_error_y_dice_de_donde_sacar_los_precios(tmp_path, change,
+                                                                            error):
+    rows = _rows()
+    rows[1] = rows[1] | change
+    with pytest.raises(market.MarketError, match=error) as caught:
+        market.load_prices(_write(tmp_path, rows), CLUBS, CONFIG)
+    assert "- SINT.L (Sintético L): cierre del 30/06/2031" in str(caught.value)
+
+
+def test_faltan_tickers_o_sobran_o_se_repiten(tmp_path):
+    rows = _rows()
+    with pytest.raises(market.MarketError, match="faltan: SINT.L"):
+        market.load_prices(_write(tmp_path, rows[:1]), CLUBS, CONFIG)
+    with pytest.raises(market.MarketError, match="tickers repetidos: SINT.MI"):
+        market.load_prices(_write(tmp_path, rows + rows[:1]), CLUBS, CONFIG)
+    with pytest.raises(market.MarketError, match="no están en config/clubs.yaml: OTRO.MI"):
+        market.load_prices(_write(tmp_path, rows + [rows[0] | {"ticker": "OTRO.MI"}]), CLUBS,
+                           CONFIG)
+
+
+def test_sin_el_archivo_dice_que_copiar_y_de_donde_sacar_cada_precio(tmp_path):
+    with pytest.raises(market.MarketError) as caught:
+        market.load_prices(tmp_path / "no_existe.csv", CLUBS, CONFIG)
+    message = str(caught.value)
+    assert "Copia la plantilla config/plantillas/precios.csv" in message
+    assert "register-manual" in message
+    assert ("- SINT.L (Sintético L): cierre del 30/06/2031 (o del último día de cotización "
+            "anterior) en Bolsa de Londres, en GBp (peniques)") in message
+    assert "No cotizado" not in message
+
+
+def test_la_plantilla_tiene_los_8_tickers_y_las_columnas_vacias():
+    config = market.load_config("2024/25")
+    assert (config.valuation_date, config.prices_file) == (date(2025, 6, 30),
+                                                           "manual/prices_2025-06-30.csv")
+    assert config.illiquid == {"FCP.LS": "sin negociación el 30/06/2025 (volumen 0)"}
+    with (ROOT / config.template).open(newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        rows = list(reader)
+    assert reader.fieldnames == market.COLUMNS
+    tickers = [club.ticker for club in load_clubs() if club.ticker]
+    assert [row["ticker"] for row in rows] == tickers and len(tickers) == 8
+    assert all(value == "" for row in rows for key, value in row.items() if key != "ticker")
+    # Una plantilla sin rellenar no se puede usar.
+    with pytest.raises(market.MarketError, match="sin rellenar"):
+        market.load_prices(ROOT / config.template, load_clubs(), config)
 
 
 def test_los_peniques_son_libras():

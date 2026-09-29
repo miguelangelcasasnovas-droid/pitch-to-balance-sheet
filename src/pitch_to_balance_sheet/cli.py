@@ -4,9 +4,8 @@
 - download-web: PDFs de la web de los clubes (fuentes url), a data/raw/web/.
 - download-fx: tipos de referencia diarios del BCE de las monedas de los clubes que no informan
   en EUR o no cotizan en EUR, a data/raw/ecb/.
-- download-prices: cierres de los cotizados con yfinance alrededor de la fecha de valoración, a
-  data/raw/market/.
-- register-manual: PDFs descargados a mano, al manifiesto.
+- register-manual: PDFs descargados a mano y el CSV de precios de config/market.yaml, al
+  manifiesto.
 - text-layer: capa de texto de los PDFs locales, a data/processed/text_layer_<temporada>.csv.
 - extract: cifras de la cuenta de resultados y del balance de cada club, con cuadres y recortes.
   Lee el OCR guardado; con --reocr vuelve a pasar Apple Vision (solo macOS).
@@ -160,37 +159,9 @@ def download_fx(season: str) -> int:
     return 1 if errors else 0
 
 
-def download_prices(season: str) -> int:
-    """Descarga los cierres de los cotizados que falten y los registra en el manifiesto."""
-    errors = []
-    for club in load_clubs():
-        if not club.ticker:
-            continue
-        file = market.price_file(club.ticker)
-        if (RAW_DIR / file).exists():
-            try:
-                manifest.verify(RAW_DIR, file, MANIFEST)
-            except manifest.ManifestError as exc:
-                errors.append(f"{club.club_id}: {exc}")
-            else:
-                log.info("%s: data/raw/%s ya descargado y con su sha256", club.club_id, file)
-            continue
-        try:
-            entry = market.download_price(club, RAW_DIR)
-            price = market.load_price(RAW_DIR / file, club)
-        except market.MarketError as exc:
-            errors.append(f"{club.club_id}: {exc}")
-            continue
-        manifest.upsert(MANIFEST, [entry])
-        log.info("%s: data/raw/%s  %s %s %s (%s)  sha256 %s", club.club_id, file, price.date,
-                 price.close, price.currency, price.note, entry.sha256)
-    for error in errors:
-        print(f"error: {error}", file=sys.stderr)
-    return 1 if errors else 0
-
-
 def register_manual(season: str) -> int:
-    """Registra en el manifiesto los PDFs manuales de config/sources.yaml."""
+    """Registra en el manifiesto los PDFs manuales de config/sources.yaml y el CSV de precios de
+    config/market.yaml."""
     registered = manifest.read(MANIFEST)
     for club_id, club_sources in load_sources(season).items():
         for source in club_sources.all:
@@ -228,6 +199,41 @@ def register_manual(season: str) -> int:
             manifest.upsert(MANIFEST, [entry])
             log.info("%s: registrado data/raw/%s  %d bytes  sha256 %s  %s", club_id,
                      entry.file, entry.bytes, entry.sha256, entry.retrieved_at)
+    return register_prices(season, registered)
+
+
+def register_prices(season: str, registered: dict) -> int:
+    """El CSV de precios bajados a mano: se comprueba entero antes de registrarlo."""
+    try:
+        config = market.load_config(season)
+        path = RAW_DIR / config.prices_file
+        prices = market.load_prices(path, load_clubs(), config)
+    except market.MarketError as exc:
+        print(f"error: precios: {exc}", file=sys.stderr)
+        return 1
+    sha256 = manifest.sha256_file(path)
+    previous = registered.get(config.prices_file)
+    if previous and previous["sha256"] != sha256:
+        print(f"error: precios: data/raw/{config.prices_file} ha cambiado desde que se registró "
+              f"(sha256 {previous['sha256']} y ahora {sha256}). Si es a propósito, quita su fila "
+              "del manifiesto y vuelve a registrarlo", file=sys.stderr)
+        return 1
+    if previous:
+        log.info("precios: data/raw/%s ya estaba registrado", config.prices_file)
+        return 0
+    modified = datetime.fromtimestamp(path.stat().st_mtime, UTC)
+    entry = manifest.ManifestEntry(
+        file=config.prices_file,
+        # Cada precio lleva su fuente en el propio CSV (source_url, source_name, retrieved_at).
+        url="manual: fuente de cada precio en su fila (source_url)",
+        retrieved_at=modified.isoformat(timespec="seconds"),
+        sha256=sha256,
+        bytes=path.stat().st_size,
+        content_type="text/csv",
+    )
+    manifest.upsert(MANIFEST, [entry])
+    log.info("precios: registrado data/raw/%s con %d tickers  sha256 %s", entry.file,
+             len(prices), entry.sha256)
     return 0
 
 
@@ -386,11 +392,19 @@ def build_facts(season: str) -> int:
         for problem in problems:
             print(f"error: fact_financials (pandera): {problem}", file=sys.stderr)
         return 1
+    metric_frame = metrics.to_frame(metrics.compute(frame))
+    problems = metrics.validate(metric_frame)
+    if problems:
+        for problem in problems:
+            print(f"error: métricas (pandera): {problem}", file=sys.stderr)
+        return 1
     written = facts.write(frame, season)
+    facts.replace_season(written[1], "metrics", metric_frame, season)
     counts = frame.groupby("is_gap").size().to_dict()
     print(f"fact_financials {season}: {len(frame)} filas, {counts.get(False, 0)} cifras y "
-          f"{counts.get(True, 0)} huecos; pandera OK")
-    print("\n" + report.metrics_table(metrics.to_frame(metrics.compute(frame))))
+          f"{counts.get(True, 0)} huecos; pandera OK. Métricas: {len(metric_frame)} "
+          f"({(metric_frame['status'] == 'ok').sum()} con valor), en la tabla metrics.")
+    print("\n" + report.metrics_table(metric_frame))
     for path in written:
         print(f"\n{path.relative_to(ROOT)}", end="")
     print()
@@ -398,54 +412,53 @@ def build_facts(season: str) -> int:
 
 
 def run_valuation(season: str) -> int:
-    """Métricas y valoración de la temporada, a las tablas metrics y valuation."""
+    """Valoración por comparables de la temporada, a la tabla valuation. Los precios salen del
+    CSV manual de config/market.yaml, registrado en el manifiesto."""
     try:
         frame = facts.read(season)
         problems = facts.validate(frame)
         if problems:
             raise facts.FactsError("fact_financials no pasa pandera: " + "; ".join(problems))
         metric_frame = metrics.to_frame(metrics.compute(frame))
-        problems = metrics.validate(metric_frame)
-        if problems:
-            raise facts.FactsError("las métricas no pasan pandera: " + "; ".join(problems))
+        config = market.load_config(season)
+        clubs = load_clubs()
+        path = RAW_DIR / config.prices_file
+        if not path.exists():
+            raise market.MarketError(market.missing_file_message(path, clubs, config))
+        manifest.verify(RAW_DIR, config.prices_file, MANIFEST)
+        prices = market.load_prices(path, clubs, config)
         rates, quotes = {}, {}
-        for club in load_clubs():
+        for club in clubs:
             if not club.ticker:
                 continue
-            file = market.price_file(club.ticker)
-            manifest.verify(RAW_DIR, file, MANIFEST)
-            price = market.load_price(RAW_DIR / file, club)
-            currency = market.iso_currency(price.currency)
-            if currency != fx.BASE and currency not in rates:
-                rates_file = fx.rates_file(currency, season)
+            price = prices[club.club_id]
+            if price.currency != fx.BASE and price.currency not in rates:
+                rates_file = fx.rates_file(price.currency, season)
                 manifest.verify(RAW_DIR, rates_file, MANIFEST)
-                rates[currency] = fx.load_rates(RAW_DIR / rates_file, currency)
+                rates[price.currency] = fx.load_rates(RAW_DIR / rates_file, price.currency)
             shares = frame[(frame["club_id"] == club.club_id)
                            & (frame["concept"] == "shares_outstanding")]
             if shares.empty or shares.iloc[0]["is_gap"]:
                 raise valuation.ValuationError(f"{club.club_id}: falta shares_outstanding")
             quotes[club.club_id] = valuation.quote(club, price, int(shares.iloc[0]["value_full"]),
                                                    rates)
-        valuation_frame = valuation.to_frame(valuation.run(frame, metric_frame, quotes, season))
+        valuation_frame = valuation.to_frame(
+            valuation.run(frame, metric_frame, quotes, config.valuation_date, season))
         problems = valuation.validate(valuation_frame)
         if problems:
             raise valuation.ValuationError("la valoración no pasa pandera: " + "; ".join(problems))
         database = PROCESSED_DIR / facts.DATABASE
-        facts.replace_season(database, "metrics", metric_frame, season)
         facts.replace_season(database, "valuation", valuation_frame, season)
     except (facts.FactsError, fx.FxError, manifest.ManifestError, market.MarketError,
             valuation.ValuationError) as exc:
         print(f"error: valoración: {exc}", file=sys.stderr)
         return 1
-    print(f"Métricas y valoración {season}: {len(metric_frame)} métricas "
-          f"({(metric_frame['status'] == 'ok').sum()} con valor) y {len(valuation_frame)} filas de "
-          f"valoración; pandera OK. En millones de EUR.")
+    print(f"Valoración {season}: {len(valuation_frame)} filas; pandera OK. En millones de EUR.")
     print("\n" + report.final_table(valuation_frame, metric_frame))
-    print("\n" + report.metrics_table(metric_frame))
     print("\n" + report.listed_table(valuation_frame))
     print("\n" + report.sensitivity_table(valuation_frame))
     print("\n" + report.backtest_table(valuation_frame))
-    print(f"\n{database.relative_to(ROOT)}: tablas metrics y valuation")
+    print(f"\n{database.relative_to(ROOT)}: tabla valuation")
     return 0
 
 
@@ -456,12 +469,11 @@ def main(argv: list[str] | None = None) -> int:
         ("download", "descarga las cuentas de Companies House de una temporada"),
         ("download-web", "descarga los PDFs de la web de los clubes (fuentes url)"),
         ("download-fx", "descarga los tipos de referencia diarios del BCE (monedas no EUR)"),
-        ("download-prices", "descarga con yfinance los cierres de los cotizados"),
-        ("register-manual", "registra en el manifiesto los PDFs descargados a mano"),
+        ("register-manual", "registra en el manifiesto los PDFs y los precios bajados a mano"),
         ("text-layer", "mide la capa de texto de los PDFs locales de config/sources.yaml"),
         ("extract", "cifras de la cuenta de resultados y del balance, con cuadres y recortes"),
-        ("facts", "fact_financials en EUR (parquet y DuckDB), validada, y la tabla resumen"),
-        ("valuation", "métricas y valoración por comparables a las tablas metrics y valuation"),
+        ("facts", "fact_financials en EUR (parquet y DuckDB) y las métricas, validadas"),
+        ("valuation", "valoración por comparables, con los precios manuales, a la tabla valuation"),
     ):
         command = commands.add_parser(name, help=help_text)
         command.add_argument("--season", default="2024/25", help="temporada, p. ej. 2024/25")
@@ -484,7 +496,6 @@ def main(argv: list[str] | None = None) -> int:
         "download": download,
         "download-web": download_web,
         "download-fx": download_fx,
-        "download-prices": download_prices,
         "register-manual": register_manual,
         "text-layer": text_layer,
         "facts": build_facts,

@@ -85,6 +85,8 @@ def final_table(valuation: pd.DataFrame, metrics: pd.DataFrame) -> str:
         row = base.loc[club_id]
         if row["role"] == "listed":
             ev_multiple, implied, equity = multiple(row["ev_to_revenue"]), "—", "—"
+            if row["illiquid"]:
+                ev_multiple += " (ilíquido)"
         else:
             ev_multiple = "—"
             implied = " – ".join(millions(row[f"ev_implied_{p}"]) for p in ("p25", "p50", "p75"))
@@ -100,16 +102,19 @@ def final_table(valuation: pd.DataFrame, metrics: pd.DataFrame) -> str:
 def listed_table(valuation: pd.DataFrame) -> str:
     names = _names()
     base = _scenario(valuation, "base")
-    lines = ["| Club | Cierre | Precio | Tipo BCE | Precio en EUR | Acciones | Capitalización | "
-             "Deuda neta | EV | Ingresos | EV / ingresos |", "|" + " --- |" * 11]
+    lines = ["| Club | Cierre | Precio | Fuente del precio | Tipo BCE | Precio en EUR | Acciones "
+             "| Capitalización | Deuda neta | EV | Ingresos | EV / ingresos |",
+             "|" + " --- |" * 12]
     for club_id in _order(base.index):
         row = base.loc[club_id]
         if row["role"] != "listed":
             continue
         rate = "—" if row["fx_date"] == "" else f"{row['fx_rate']:g} ({row['fx_date']})"
+        illiquid = " (ilíquido)" if row["illiquid"] else ""
         lines.append(
-            f"| {names.get(club_id, club_id)} | {row['price_date']} | {row['price_close']:g} "
-            f"{row['price_currency']} | {rate} | {row['price_eur']:.4f} | "
+            f"| {names.get(club_id, club_id)}{illiquid} | {row['price_date']} | "
+            f"{row['price_close']:g} {row['price_unit']} | {row['price_source_name']} | {rate} | "
+            f"{row['price_eur']:.4f} | "
             f"{int(row['shares_outstanding']):,} | {millions(row['market_cap_eur'])} | "
             f"{millions(row['net_debt_eur'])} | {millions(row['ev_eur'])} | "
             f"{millions(row['revenue_eur'])} | {multiple(row['ev_to_revenue'])} |")
@@ -153,22 +158,26 @@ def sensitivity_table(valuation: pd.DataFrame) -> str:
 
 
 def backtest_table(valuation: pd.DataFrame, scenario: str = "base") -> str:
-    """Prueba sobre los cotizados: EV real frente al implícito."""
+    """Prueba sobre los cotizados: EV real frente al implícito, sin el propio club entre los
+    pares (la versión principal) y, como referencia, con él."""
     names = _names()
     rows = _scenario(valuation, scenario)
-    lines = ["| Club | EV real | EV implícito P25 – mediana – P75 | Desviación frente a la mediana "
-             "| Dentro de P25–P75 | Mediana sin el propio club | Desviación sin el propio club |",
-             "|" + " --- |" * 7]
+    lines = ["| Club | EV real | Múltiplo de los demás P25 – mediana – P75 | EV implícito P25 – "
+             "mediana – P75 | Desviación frente a la mediana | Dentro de P25–P75 | Desviación "
+             "con el propio club |", "|" + " --- |" * 7]
+
+    def yes_no(value):
+        return "—" if pd.isna(value) else ("sí" if value else "no")
+
     for club_id in _order(rows.index):
         row = rows.loc[club_id]
         if row["role"] != "listed":
             continue
-        inside = "—" if pd.isna(row["within_p25_p75"]) else ("sí" if row["within_p25_p75"]
-                                                             else "no")
         lines.append(
             f"| {names.get(club_id, club_id)} | {millions(row['ev_eur'])} | "
-            + " – ".join(millions(row[f"ev_implied_{p}"]) for p in ("p25", "p50", "p75"))
-            + f" | {percent(row['deviation_vs_p50'])} | {inside} | "
-            f"{multiple(row['multiple_p50_excl_self'])} | "
-            f"{percent(row['deviation_vs_p50_excl_self'])} |")
+            + " – ".join(multiple(row[f"backtest_multiple_{p}"]) for p in ("p25", "p50", "p75"))
+            + " | " + " – ".join(millions(row[f"backtest_ev_implied_{p}"])
+                                 for p in ("p25", "p50", "p75"))
+            + f" | {percent(row['backtest_deviation'])} | "
+            f"{yes_no(row['backtest_within_p25_p75'])} | {percent(row['deviation_incl_self'])} |")
     return "\n".join(lines)

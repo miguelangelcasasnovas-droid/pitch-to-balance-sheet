@@ -1,8 +1,9 @@
 """Valoración por comparables (plan, sección 9), en EUR, a la fecha de valoración.
 
 - Cotizados: capitalización = precio × shares_outstanding (del informe); EV = capitalización +
-  deuda neta; múltiplo = EV / revenue_ex_player_trading. El precio se pasa a EUR con el tipo del
-  BCE del mismo día (GBp entre 100 y después libras a euros; MANU, de dólares a euros).
+  deuda neta; múltiplo = EV / revenue_ex_player_trading. El precio, del CSV manual de
+  config/market.yaml, se pasa a EUR con el tipo del BCE del mismo día (GBp entre 100 y después
+  libras a euros; MANU, de dólares a euros). Un valor sin negociación ese día se marca ilíquido.
 - No cotizados: los percentiles 25, 50 y 75 del múltiplo de los pares, por sus ingresos, dan el EV
   implícito; el equity implícito es EV − deuda neta. Sin prima de control: los precios son de
   participaciones minoritarias.
@@ -13,8 +14,10 @@
   - large_peers: solo Manchester United, Juventus y Borussia Dortmund;
   - incl_transfers: EV y equity con net_debt_incl_transfers; un par sin ese dato sale del cálculo;
   - incl_related_party: el equity de los clubes con related_party_financing, con esa deuda.
-  En todos, los cotizados también reciben un EV implícito, como prueba: su desviación respecto
-  al real, con los pares que incluyen al propio club y sin él.
+  En todos, los cotizados también reciben un EV implícito, como prueba. La versión principal es
+  sin el propio club (leave-one-out, decisión del usuario del 29/09/2026): sus percentiles salen
+  de los demás pares, y la desviación es EV real / EV implícito mediano − 1. Con el propio club,
+  como referencia.
 """
 
 from dataclasses import asdict, dataclass, field, replace
@@ -26,7 +29,7 @@ import pandera.pandas as pa
 
 from pitch_to_balance_sheet import fx
 from pitch_to_balance_sheet.config import Club, load_clubs
-from pitch_to_balance_sheet.market import VALUATION_DATE, Price, iso_currency
+from pitch_to_balance_sheet.market import Price
 from pitch_to_balance_sheet.metrics import GAP, OK, REVENUE
 
 LARGE_PEERS = ("manchester_united", "juventus", "borussia_dortmund")
@@ -77,7 +80,10 @@ class Quote:
 
 def quote(club: Club, price: Price, shares: int, rates: dict) -> Quote:
     """El precio en EUR con el tipo del BCE del día del precio, y la capitalización."""
-    currency = iso_currency(price.currency)
+    if price.unit != club.quote_currency:
+        raise ValuationError(f"{club.club_id}: el precio viene en {price.unit} y cotiza en "
+                             f"{club.quote_currency}")
+    currency = price.currency
     local = price.close / club.quote_divisor
     if currency == fx.BASE:
         rate, fx_date, fx_note = Decimal(1), "", "la cotización ya está en EUR"
@@ -106,8 +112,12 @@ class Row:
     net_debt_metric: str
     price_date: str = ""
     price_close: float | None = None
-    price_currency: str = ""
+    price_unit: str = ""  # la unidad de cotización: GBp, USD, EUR
     quote_divisor: int | None = None
+    price_source_url: str = ""
+    price_source_name: str = ""
+    price_retrieved_at: str = ""
+    illiquid: str = ""  # motivo, si el valor no se negoció el día del precio
     fx_rate: float | None = None
     fx_date: str = ""
     price_eur: float | None = None
@@ -128,11 +138,18 @@ class Row:
     equity_implied_p25: int | None = None
     equity_implied_p50: int | None = None
     equity_implied_p75: int | None = None
-    multiple_p50_excl_self: float | None = None
-    ev_implied_p50_excl_self: int | None = None
-    deviation_vs_p50: float | None = None  # EV real / EV implícito mediano − 1
-    deviation_vs_p50_excl_self: float | None = None
-    within_p25_p75: bool | None = None
+    # Prueba sobre los cotizados, sin el propio club (la versión principal).
+    backtest_multiple_p25: float | None = None
+    backtest_multiple_p50: float | None = None
+    backtest_multiple_p75: float | None = None
+    backtest_ev_implied_p25: int | None = None
+    backtest_ev_implied_p50: int | None = None
+    backtest_ev_implied_p75: int | None = None
+    backtest_deviation: float | None = None  # EV real / EV implícito mediano − 1
+    backtest_within_p25_p75: bool | None = None
+    # La misma prueba con el propio club entre los pares, como referencia.
+    deviation_incl_self: float | None = None
+    within_p25_p75_incl_self: bool | None = None
     status: str = OK
     reason: str = ""
     note: str = field(default="")
@@ -156,7 +173,7 @@ def _revenue(facts: pd.DataFrame, club_id: str) -> int | None:
 
 
 def run(facts: pd.DataFrame, metrics: pd.DataFrame, quotes: dict[str, Quote],
-        season: str = "2024/25", valuation_date: date = VALUATION_DATE) -> list[Row]:
+        valuation_date: date, season: str = "2024/25") -> list[Row]:
     clubs = [club for club in load_clubs() if club.club_id in set(facts["club_id"])]
     listed = [club.club_id for club in clubs if club.ticker]
     rows = []
@@ -176,10 +193,12 @@ def run(facts: pd.DataFrame, metrics: pd.DataFrame, quotes: dict[str, Quote],
                 q = quotes[club.club_id]
                 row = replace(
                     row, price_date=q.price.date.isoformat(), price_close=float(q.price.close),
-                    price_currency=q.price.currency, quote_divisor=q.divisor,
+                    price_unit=q.price.unit, quote_divisor=q.divisor,
+                    price_source_url=q.price.source_url, price_source_name=q.price.source_name,
+                    price_retrieved_at=q.price.retrieved_at, illiquid=q.price.illiquid,
                     fx_rate=float(q.fx_rate), fx_date=q.fx_date, price_eur=float(q.price_eur),
                     shares_outstanding=q.shares, market_cap_eur=q.market_cap_eur,
-                    note=f"{q.price.note}; {q.fx_note}")
+                    note="; ".join(text for text in (q.price.note, q.fx_note) if text))
                 if net_debt is not None and row.revenue_eur:
                     row.ev_eur = q.market_cap_eur + net_debt
                     row.ev_to_revenue = row.ev_eur / row.revenue_eur
@@ -214,15 +233,18 @@ def run(facts: pd.DataFrame, metrics: pd.DataFrame, quotes: dict[str, Quote],
             if row.role == "unlisted":
                 row.note = NO_CONTROL_PREMIUM
             elif row.ev_eur is not None:  # prueba sobre los cotizados
-                row.deviation_vs_p50 = row.ev_eur / row.ev_implied_p50 - 1
-                row.within_p25_p75 = implied[0] <= row.ev_eur <= implied[2]
+                row.deviation_incl_self = row.ev_eur / row.ev_implied_p50 - 1
+                row.within_p25_p75_incl_self = implied[0] <= row.ev_eur <= implied[2]
                 others = [m for club_id, m in multiples.items() if club_id != row.club_id]
                 if others:
-                    row.multiple_p50_excl_self = quantile(others, 0.5)
-                    row.ev_implied_p50_excl_self = _euros(
-                        Decimal(str(row.multiple_p50_excl_self)) * row.revenue_eur)
-                    row.deviation_vs_p50_excl_self = (row.ev_eur / row.ev_implied_p50_excl_self
-                                                      - 1)
+                    loo = [quantile(others, q) for q in QUANTILES]
+                    (row.backtest_multiple_p25, row.backtest_multiple_p50,
+                     row.backtest_multiple_p75) = loo
+                    loo_ev = [_euros(Decimal(str(m)) * row.revenue_eur) for m in loo]
+                    (row.backtest_ev_implied_p25, row.backtest_ev_implied_p50,
+                     row.backtest_ev_implied_p75) = loo_ev
+                    row.backtest_deviation = row.ev_eur / loo_ev[1] - 1
+                    row.backtest_within_p25_p75 = loo_ev[0] <= row.ev_eur <= loo_ev[2]
             rows.append(row)
     return rows
 
@@ -232,12 +254,14 @@ def to_frame(rows: list[Row]) -> pd.DataFrame:
     integers = ["quote_divisor", "shares_outstanding", "market_cap_eur", "net_debt_eur",
                 "revenue_eur", "ev_eur", "n_peers", "ev_implied_p25", "ev_implied_p50",
                 "ev_implied_p75", "equity_implied_p25", "equity_implied_p50",
-                "equity_implied_p75", "ev_implied_p50_excl_self"]
+                "equity_implied_p75", "backtest_ev_implied_p25", "backtest_ev_implied_p50",
+                "backtest_ev_implied_p75"]
     floats = ["price_close", "fx_rate", "price_eur", "ev_to_revenue", "multiple_p25",
-              "multiple_p50", "multiple_p75", "multiple_p50_excl_self", "deviation_vs_p50",
-              "deviation_vs_p50_excl_self"]
+              "multiple_p50", "multiple_p75", "backtest_multiple_p25", "backtest_multiple_p50",
+              "backtest_multiple_p75", "backtest_deviation", "deviation_incl_self"]
     return frame.astype({**dict.fromkeys(integers, "Int64"), **dict.fromkeys(floats, "float64"),
-                         "within_p25_p75": "boolean"})
+                         "backtest_within_p25_p75": "boolean",
+                         "within_p25_p75_incl_self": "boolean"})
 
 
 VALUATION_SCHEMA = pa.DataFrameSchema(

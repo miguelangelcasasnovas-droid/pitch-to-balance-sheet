@@ -40,12 +40,11 @@ uv run pytest
 scripts/install-hooks.sh      # gitleaks en .tools/ y hook de pre-commit
 uv run python -m pitch_to_balance_sheet download          # cuentas de Companies House
 uv run python -m pitch_to_balance_sheet download-web      # PDFs y ZIP ESEF de la web
-uv run python -m pitch_to_balance_sheet register-manual   # PDFs manuales al manifiesto
+uv run python -m pitch_to_balance_sheet register-manual   # PDFs y precios manuales al manifiesto
 uv run python -m pitch_to_balance_sheet text-layer        # capa de texto de los PDFs locales
 uv run python -m pitch_to_balance_sheet extract [--club X]  # cifras, cuadres y recortes
 uv run python -m pitch_to_balance_sheet extract --reocr     # ídem, volviendo a pasar Vision
 uv run python -m pitch_to_balance_sheet download-fx       # tipos de referencia del BCE
-uv run python -m pitch_to_balance_sheet facts             # fact_financials en EUR (parquet y DuckDB)
-uv run python -m pitch_to_balance_sheet download-prices   # cierres de los cotizados (yfinance)
-uv run python -m pitch_to_balance_sheet valuation         # métricas y valoración (tablas metrics y valuation)
+uv run python -m pitch_to_balance_sheet facts             # fact_financials en EUR y métricas (parquet y DuckDB)
+uv run python -m pitch_to_balance_sheet valuation         # valoración con los precios manuales (tabla valuation)
 ```

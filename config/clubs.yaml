@@ -5,8 +5,8 @@
 # un cierre a 31/05/2025 o a 30/06/2025 es la temporada 2024/25.
 # framework: marco contable de las cuentas usadas, con la página donde lo dice el informe. En FRS
 # 102 los arrendamientos operativos no van al balance (sección 9 del plan).
-# ticker, quote_currency y quote_divisor: los cotizados (plan, sección 6). La moneda la comprueba la
-# descarga de precios con la que devuelve yfinance.
+# ticker, exchange, quote_currency y quote_divisor: los cotizados (plan, sección 6). El precio de
+# cada uno se toma a mano de su bolsa (config/market.yaml) y tiene que venir en quote_currency.
 clubs:
   - club_id: arsenal
     name: Arsenal
@@ -53,6 +53,7 @@ clubs:
     fiscal_year_end: "06-30"
     framework: "IFRS"  # pág. 158: IFRS adoptadas por la Unión Europea
     ticker: "JUVE.MI"
+    exchange: "Borsa Italiana"
     quote_currency: "EUR"
   - club_id: celtic
     name: Celtic
@@ -61,6 +62,7 @@ clubs:
     fiscal_year_end: "06-30"
     framework: "IFRS"  # pág. 29: UK adopted international accounting standards
     ticker: "CCP.L"
+    exchange: "London Stock Exchange (AIM)"
     quote_currency: "GBp"
     quote_divisor: 100  # cotiza en peniques: entre 100 para libras
   # Fuente: docs/plan.md, sección 6 (entidad y "Todos cierran el 30 de junio").
@@ -71,6 +73,7 @@ clubs:
     fiscal_year_end: "06-30"
     framework: "IFRS"  # 20-F 2025, pág. 5: IFRS as issued by the IASB
     ticker: "MANU"
+    exchange: "NYSE"
     quote_currency: "USD"
   - club_id: borussia_dortmund
     name: Borussia Dortmund
@@ -79,6 +82,7 @@ clubs:
     fiscal_year_end: "06-30"
     framework: "IFRS"  # pág. 132: IFRS, wie sie in der EU anzuwenden sind
     ticker: "BVB.DE"
+    exchange: "Xetra"
     quote_currency: "EUR"
   - club_id: ajax
     name: Ajax
@@ -87,6 +91,7 @@ clubs:
     fiscal_year_end: "06-30"
     framework: "IFRS"  # pág. 85: IFRS Accounting Standards adoptadas por la Unión Europea
     ticker: "AJAX.AS"
+    exchange: "Euronext Ámsterdam"
     quote_currency: "EUR"
   - club_id: benfica
     name: Benfica
@@ -95,6 +100,7 @@ clubs:
     fiscal_year_end: "06-30"
     framework: "IFRS"  # pág. 123: IFRS adoptadas por la Unión Europea
     ticker: "SLBEN.LS"
+    exchange: "Euronext Lisboa"
     quote_currency: "EUR"
   # Fuente: docs/plan.md, sección 6. Cierre: Lazio, "al 30.06.2025" en el título del ESEF; Porto,
   # posición financiera a 30/06/2024 y 30/06/2025 en su comunicado (docs/fuentes-pendientes.md).
@@ -105,6 +111,7 @@ clubs:
     fiscal_year_end: "06-30"
     framework: "IFRS"  # ESEF, pág. 146 del XHTML: IFRS adoptadas por la Comisión Europea
     ticker: "SSL.MI"
+    exchange: "Borsa Italiana"
     quote_currency: "EUR"
   - club_id: porto
     name: FC Porto
@@ -113,4 +120,5 @@ clubs:
     fiscal_year_end: "06-30"
     framework: "IFRS"  # pág. 121: Normas Internacionais de Relato Financeiro adotadas pela União Europeia
     ticker: "FCP.LS"
+    exchange: "Euronext Lisboa"
     quote_currency: "EUR"
