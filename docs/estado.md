@@ -1,6 +1,6 @@
 # Estado del proyecto
 
-Actualizado: 29/09/2026 (fase 3c cerrada; yfinance retirado; parado mientras Cowork busca los precios y las transacciones precedentes)
+Actualizado: 29/09/2026 (fase 3c cerrada; yfinance retirado; Cowork ha dejado los precios del 30/06/2025 y las transacciones precedentes; falta `register-manual` y `valuation` en Claude Code)
 
 ## Fase 0: cerrada
 
@@ -720,6 +720,40 @@ Extracción: 953 cuadres, todos OK (30 por redondeo). `fact_financials`: 368 fil
 
 **Tests:** 201, en verde. Los de precios se han rehecho para el CSV manual (fixture sintético, filas mal rellenadas, plantilla con los 8 tickers y error sin el archivo); la prueba sobre los cotizados se comprueba sin el propio club.
 
+## Precios del 30/06/2025 y transacciones precedentes (Cowork, 29/09/2026)
+
+Hecho en Cowork con Claude Code parado. Solo se ha escrito en `docs/` y en `data/raw/manual/prices_2025-06-30.csv`; no se ha tocado `config/`, `src/` ni el resto de `data/`, ni se ha ejecutado código del proyecto.
+
+**Precios** ([`precios-30-06-2025.md`](precios-30-06-2025.md), con la URL y el camino de cada dato). Copiada la plantilla de `config/plantillas/` a `data/raw/manual/prices_2025-06-30.csv` y rellenas las 8 filas, solo con webs de bolsa o de la página de inversores del club y sin ajustar:
+
+| Ticker | Fecha | Cierre | Unidad | Fuente |
+| --- | --- | --- | --- | --- |
+| MANU | 30/06/2025 | 17.81 | USD | IR de Manchester United (calculadora de Investis); nyse.com no publica histórico diario |
+| JUVE.MI | 30/06/2025 | 3.088 | EUR | Euronext, Historical data (Euronext Milan) |
+| BVB.DE | 30/06/2025 | 3.93 | EUR | Deutsche Börse, Historical prices and volumes (Xetra) |
+| CCP.L | 30/06/2025 | 195 | GBp | LSE, gráfico de la página del valor (serie de cierre de LSEG) |
+| AJAX.AS | 30/06/2025 | 9.70 | EUR | Euronext, Historical data (Ámsterdam) |
+| SLBEN.LS | 30/06/2025 | 5.26 | EUR | Euronext, Historical data (Lisboa) |
+| SSL.MI | 30/06/2025 | 0.80 | EUR | Euronext, Historical data (Euronext Milan) |
+| FCP.LS | 27/06/2025 | 1.05 | EUR | Euronext, Historical data (Lisboa) |
+
+- **FC Porto no negoció el 30/06/2025,** confirmado: volumen 0 y sin apertura, máximo, mínimo ni último. El último día con negociación es el viernes 27/06/2025 (1.05, 327 acciones), dentro del margen de 5 días de la decisión 93. Coincide con `illiquid` de `config/market.yaml`.
+- **Comprobación:** un script aparte, de solo lectura, repite las reglas de `market.py` (columnas, tickers, fecha, cierre, `retrieved_at`, unidad y moneda de `clubs.yaml`, URL). Las 8 filas cumplen. La comprobación de verdad es `register-manual`.
+- `data/raw/*` está en `.gitignore`: el CSV no sale en `git status` y queda trazado en el manifiesto al registrarlo.
+
+**Transacciones precedentes** ([`transacciones-precedentes.md`](transacciones-precedentes.md)), sin múltiplos ni EV. Ocho operaciones:
+
+- **Con precio en fuente primaria:**
+  - Chelsea 2022: 2.500 M£ por las acciones y 1.750 M£ de inversión comprometida.
+  - Manchester United/INEOS 2023-24: 33,00 USD por acción, más 200 + 100 M USD de ampliación (SEC).
+  - AC Milan/RedBird 2022: 1.200 M€, sin decir si es equity o valor de empresa.
+  - City Football Group/Silver Lake 2019: 500 M USD por algo más del 10 %.
+- **Sin fuente primaria para el precio:**
+  - Newcastle 2021: la prensa solo cita la oferta de 2020, de 300 o 305 M£.
+  - Everton/Friedkin 2024: «más de 400 M£», según AFP citando a la BBC.
+  - AS Roma/Friedkin 2020: unos 591 M€ con deudas; la nota del club da 404.
+- **Sin precio:** Inter/Oaktree 2024 es la ejecución de una prenda; el préstamo impagado era de unos 395 M€.
+
 ## Decisiones
 
 1. **Carpeta de trabajo:** `~/football-club-finance`.
@@ -902,8 +936,9 @@ Tomada por el usuario el 29/09/2026:
 
 | Pendiente | Para cuándo | Detalle |
 | --- | --- | --- |
-| Precios de cierre del 30/06/2025 | Los busca Cowork | Rellenar la plantilla `config/plantillas/prices_2025-06-30.csv`, guardarla en `data/raw/manual/prices_2025-06-30.csv` y ejecutar `register-manual` y `valuation`. Confirmar que FC Porto no negoció ese día |
-| Transacciones precedentes | Las busca Cowork | Fuera del alcance actual del código; se decidirá cómo usarlas cuando estén |
+| Registrar los precios del 30/06/2025 | Ya, en Claude Code | `data/raw/manual/prices_2025-06-30.csv` está relleno (Cowork, 29/09/2026). Falta `register-manual` y `valuation`, y revisar la tabla final, las sensibilidades y la prueba sin el propio club. FC Porto: confirmado sin negociación el 30/06, precio del 27/06 |
+| Transacciones precedentes | Decisión del usuario | Documentadas en `docs/transacciones-precedentes.md`. Falta decidir si se usan (y cómo) en la valoración o solo en el README. Huecos: precio sin fuente primaria en Newcastle, Everton y Roma; cierre de Roma solo por titulares de prensa; Olympique Lyonnais sin documentar |
+| Precio de Celtic | Opcional | Leído en la etiqueta del gráfico de la LSE (195 peniques). El volumen del día sale redondeado (1.6K) |
 | SCR aproximado | Cuando haya 2022/23 y 2023/24 | Hueco: faltan dos ejercicios para el promedio de traspasos a 3 años |
 | PDF manual de Arsenal | Opcional | Si el usuario lo deja en `data/raw/manual/arsenal_2024-25.pdf`, pasa a ser la fuente principal. Hay que añadirlo a `sources.yaml` con su URL y registrarlo |
 | README | Con el dashboard | Incluir `docs/incoherencias-fuentes.md` y la lista de huecos |
@@ -913,5 +948,5 @@ El resto de comprobaciones de la fase 2 está en la sección 7.1 y en los riesgo
 
 ## Siguiente paso
 
-1. Cowork busca los precios de cierre del 30/06/2025 y las transacciones precedentes, y deja los precios en `data/raw/manual/prices_2025-06-30.csv`.
-2. Con los precios: `register-manual` y `valuation`, y revisar la tabla final, las sensibilidades y la prueba sin el propio club.
+1. Claude Code: subir los dos documentos nuevos de `docs/` y este `estado.md`, ejecutar `register-manual` y `valuation` con `data/raw/manual/prices_2025-06-30.csv`, y revisar la tabla final, las sensibilidades y la prueba sin el propio club.
+2. Usuario: decidir el uso de las transacciones precedentes (`docs/transacciones-precedentes.md`).
