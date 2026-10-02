@@ -1,0 +1,246 @@
+# Transacciones precedentes (plan, sección 9). Decisión del usuario del 02/10/2026, sobre la
+# investigación de Cowork del 29/09/2026 (docs/transacciones-precedentes.md, donde están las
+# citas y las fuentes de cada operación).
+#
+# tier:
+#   base: precio con fuente primaria. Entra en el football field.
+#   press_only: precio solo en prensa. Sensibilidad, marcada así en todas las salidas.
+#   excluded: fuera del cálculo, con su motivo.
+# variants: cómo se lee el precio. basis:
+#   equity: amount es el valor del equity al 100 %; EV = equity + net_debt.
+#   ev: amount es el valor de empresa; equity implícito = EV - net_debt.
+#   per_share: price_per_share × shares_outstanding del informe de referencia (todas las
+#     clases); EV = equity + net_debt.
+# reference: el ejercicio cuyas cuentas son las últimas publicadas el día del anuncio. La fuente
+#   del documento está en config/sources.yaml, en esa temporada; published y evidence dicen cómo
+#   se ha comprobado.
+# Los importes van en unidades de price_currency, sin convertir.
+
+# Clubes que no están en config/clubs.yaml (no son del universo; solo se usan sus cuentas del
+# ejercicio de referencia).
+targets:
+  - club_id: milan
+    name: AC Milan
+    entity: Associazione Calcio Milan S.p.A.
+    companies_house_number: null
+    fiscal_year_end: "06-30"
+    framework: "OIC"  # pág. 31: principios contables italianos (OIC), no NIIF
+  - club_id: everton
+    name: Everton
+    entity: Everton Football Club Company Limited
+    companies_house_number: "00036624"
+    fiscal_year_end: "06-30"
+    framework: "FRS 102"
+  - club_id: roma
+    name: AS Roma
+    entity: A.S. Roma S.p.A.
+    companies_house_number: null
+    fiscal_year_end: "06-30"
+    framework: "IFRS"
+
+deals:
+  - deal_id: chelsea_2022
+    club_id: chelsea
+    name: Chelsea
+    tier: base
+    announced: "2022-05-07"
+    closed: "2022-05-30"
+    buyer: Consorcio de Todd Boehly y Clearlake Capital (con Mark Walter y Hansjörg Wyss)
+    stake: 100 % (la nota habla de adquirir «the Club», sin porcentaje)
+    price_currency: GBP
+    price_primary: true
+    price_source: https://www.chelseafc.com/en/news/article/club-statement1
+    price_text: «£2.5bn will be applied to purchase the shares in the Club»
+    variants:
+      - variant: equity
+        basis: equity
+        amount: "2500000000"
+    note: >-
+      Los 1.750 M£ de inversión comprometida («the proposed new owners will commit £1.75bn in
+      further investment for the benefit of the Club») no son precio: van aparte y no entran en
+      el EV.
+    reference:
+      season: "2020/21"
+      published: "2021-12-29"
+      evidence: >-
+        Companies House, filing history de 02536231 (hoy Chelsea FC Holdings Limited, entonces
+        Fordstam Limited): cuentas del grupo a 30/06/2021 depositadas el 29/12/2021. Las de
+        2021/22 cierran el 30/06/2022, después del anuncio (depositadas el 08/04/2023).
+
+  - deal_id: manchester_united_2024
+    club_id: manchester_united
+    name: Manchester United (INEOS)
+    tier: base
+    announced: "2023-12-24"
+    closed: "2024-02-20"
+    buyer: Trawlers Limited (100 % de Sir Jim Ratcliffe)
+    stake: 25 % de las clases A y B (~27,7 % tras la ampliación de 200 M USD); minoritaria
+    price_currency: USD
+    price_primary: true
+    price_source: https://www.sec.gov/Archives/edgar/data/1549107/000110465923129240/tm2333645d2_ex99-1.htm
+    price_text: 33,00 USD por acción, igual en las clase B compradas («Sale Price», sección 2.01(a)(i)) y en las clase A de la OPA
+    variants:
+      - variant: equity
+        basis: per_share
+        price_per_share: "33.00"
+    note: >-
+      Precio de una participación minoritaria, no de control. La ampliación de 200 M USD en el
+      cierre y los 100 M USD antes del 31/12/2024 no son precio. Las cuentas están en GBP: el
+      equity en USD se pasa a GBP con los tipos del BCE (USD y GBP por EUR) del día del anuncio
+      o del último día anterior con tipo. Es la única conversión.
+    reference:
+      season: "2022/23"
+      published: "2023-10-27"
+      evidence: >-
+        Form 20-F del ejercicio cerrado el 30/06/2023, fechado el 27/10/2023 en su página de
+        firmas y enlazado en ir.manutd.com/financial-information/annual-reports/2023.aspx. El
+        ejercicio 2023/24 cierra el 30/06/2024, después del anuncio.
+
+  - deal_id: milan_2022
+    club_id: milan
+    name: AC Milan (RedBird)
+    tier: base
+    announced: "2022-06-01"
+    closed: "2022-08-31"
+    buyer: RedBird Capital Partners (vende Elliott)
+    stake: «más del 99,9 %» (AFP) o 99,93 % (ItaliaOggi); sin fuente primaria
+    price_currency: EUR
+    price_primary: true
+    price_source: https://www.acmilan.com/en/news/articles/club/2022-06-01/redbird-capital-partners-enters-into-agreement-with-elliott-advisors-to-acquire-ac-milan
+    price_text: «The deal, which values the club at €1.2B»
+    variants:
+      - variant: equity
+        basis: equity
+        amount: "1200000000"
+      - variant: ev
+        basis: ev
+        amount: "1200000000"
+    note: >-
+      La fuente no dice si 1.200 M€ es el valor del equity o el de empresa: van las dos
+      variantes. En el football field entra la de equity (la regla general, EV = equity +
+      net_debt); la de EV es sensibilidad. El vendor loan de Elliott (600 M€ al 7 %, solo
+      ItaliaOggi) no se usa.
+    reference:
+      season: "2020/21"
+      published: "2021-10-26"
+      evidence: >-
+        Annual Report at 30 June 2021 de AC Milan en acmilan.com/en/club/financial-report: la
+        junta de accionistas aprobó las cuentas el 26/10/2021 (pág. 174). La web no fecha la
+        publicación del PDF. El ejercicio 2021/22 cierra el 30/06/2022, después del anuncio.
+
+  - deal_id: newcastle_2021
+    club_id: newcastle
+    name: Newcastle United
+    tier: press_only
+    announced: "2021-10-07"
+    closed: "2021-10-07"
+    buyer: PIF, PCP Capital Partners y RB Sports & Media
+    stake: 100 % (nota del PIF)
+    price_currency: GBP
+    price_primary: false
+    price_source: https://www.euronews.com/2021/10/07/uk-soccer-england-newcastle
+    price_text: >-
+      Reuters (vía Euronews), 07/10/2021: el PIF «withdrew a 305 million pounds ($415.07
+      million) bid» catorce meses antes
+    variants:
+      - variant: equity
+        basis: equity
+        amount: "305000000"
+    note: >-
+      Sin fuente primaria del precio. La cifra es la de la oferta de 2020 que cita Reuters, no un
+      precio pagado en 2021; Al Jazeera da 300 M£. Las cuentas de referencia son de 13 meses
+      (del 01/07/2019 al 31/07/2020): no se anualizan.
+    reference:
+      season: "2019/20"
+      published: "2021-08-06"
+      evidence: >-
+        Companies House, filing history de 02529667: cuentas del grupo del periodo alargado a
+        31/07/2020 (AA01 del 28/06/2021) depositadas el 06/08/2021. Las de 2020/21 (a
+        30/06/2021) se depositaron el 16/05/2022, después del anuncio.
+
+  - deal_id: everton_2024
+    club_id: everton
+    name: Everton
+    tier: press_only
+    announced: "2024-09-23"
+    closed: "2024-12-19"
+    buyer: Roundhouse Capital Holdings Limited (The Friedkin Group)
+    stake: «majority stake» (primaria); 98,8 % según AFP
+    price_currency: GBP
+    price_primary: false
+    price_source: https://www.malaymail.com/news/sports/2024/12/20/friedkin-group-completes-everton-takeover-becomes-10th-english-top-flight-club-under-american-ownership/160519
+    price_text: AFP, citando a la BBC, «TFG's deal to buy Everton was worth more than £400 million»
+    variants:
+      - variant: equity
+        basis: equity
+        amount: "400000000"
+    note: >-
+      Sin fuente primaria del precio: «más de 400 M£» es un mínimo, de una agencia que cita a
+      otro medio, y por la participación comprada, sin escalar al 100 %.
+    reference:
+      season: "2022/23"
+      published: "2024-04-10"
+      evidence: >-
+        Companies House, filing history de 00036624: cuentas del grupo a 30/06/2023 depositadas
+        el 10/04/2024. Las de 2023/24 (a 30/06/2024) se depositaron el 02/04/2025, después del
+        anuncio.
+
+  - deal_id: roma_2020
+    club_id: roma
+    name: AS Roma
+    tier: press_only
+    announced: "2020-08-06"
+    closed: "2020-08-17"
+    buyer: The Friedkin Group
+    stake: 86,6 %, más OPA obligatoria sobre el 13,4 %
+    price_currency: EUR
+    price_primary: false
+    price_source: https://tg24.sky.it/sport/2020/08/06/roma-cessione-friedkin
+    price_text: >-
+      Sky TG24, 06/08/2020: «per un prezzo di acquisto pari a euro 0,1165 per azione»;
+      «L'operazione è valutata in circa 591 milioni di euro» (deudas incluidas, según el
+      periodista)
+    variants:
+      - variant: per_share
+        basis: per_share
+        price_per_share: "0.1165"
+      - variant: ev
+        basis: ev
+        amount: "591000000"
+    note: >-
+      Sin fuente primaria: la nota del club ya no está (404). Dos lecturas: el precio por acción
+      sobre todas las acciones, y los 591 M€ «debiti compresi» como valor de empresa (incluyen
+      también los fondos puestos para la ampliación y pasivos asumidos).
+    reference:
+      season: "2018/19"
+      published: "2019-10-29"
+      evidence: >-
+        asroma.com/it/club/corporate/bilanci-e-relazioni-2: «Relazione finanziaria annuale per
+        l'esercizio chiuso al 30 giugno 2019», publicada el 29/10/2019. La de 2019/20 se
+        publicó el 26/10/2020 (proyecto) y el 09/12/2020, después del anuncio.
+
+  - deal_id: city_football_group_2019
+    name: City Football Group (Silver Lake)
+    tier: excluded
+    announced: "2019-11-27"
+    price_currency: USD
+    price_primary: true
+    price_source: https://www.silverlake.com/city-football-group-announces-us500-million-strategic-investment-by-silver-lake/
+    price_text: 500 M USD por algo más del 10 %; valora CFG en 4.800 M USD después de la inversión
+    reason: >-
+      grupo multiclub: el precio es de City Football Group, no de un club, y sus ingresos serían
+      los consolidados del grupo
+    variants: []
+
+  - deal_id: inter_2024
+    name: Inter (Oaktree)
+    tier: excluded
+    announced: "2024-05-22"
+    price_currency: EUR
+    price_primary: false
+    price_source: https://www.inter.it/it/notizie/comunicazione-societaria-23-05-2024
+    price_text: ejecución de la prenda sobre las acciones de la holding de control
+    reason: >-
+      ejecución de un préstamo impagado (~395 M€ según ANSA), no una venta: no hay precio de
+      mercado
+    variants: []

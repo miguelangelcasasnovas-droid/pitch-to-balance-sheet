@@ -16,6 +16,9 @@ class Source:
     url: str | None = None
     file: str | None = None  # ruta relativa a data/raw/, en las manuales y las de la web
     note: str | None = None
+    # En companies_house, la fecha de cierre de las cuentas si no es la de la temporada (un
+    # periodo alargado, como el de Newcastle a 31/07/2020).
+    made_up_date: str | None = None
 
 
 @dataclass(frozen=True)

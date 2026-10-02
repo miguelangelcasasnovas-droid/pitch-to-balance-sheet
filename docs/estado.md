@@ -1,6 +1,6 @@
 # Estado del proyecto
 
-Actualizado: 29/09/2026 (fase 3c cerrada; yfinance retirado; Cowork ha dejado los precios del 30/06/2025 y las transacciones precedentes; falta `register-manual` y `valuation` en Claude Code)
+Actualizado: 02/10/2026 (fase 3d hecha: valoración con los precios manuales, transacciones precedentes y football field; a la espera del OK del usuario a las decisiones 104 a 119)
 
 ## Fase 0: cerrada
 
@@ -754,6 +754,100 @@ Hecho en Cowork con Claude Code parado. Solo se ha escrito en `docs/` y en `data
   - AS Roma/Friedkin 2020: unos 591 M€ con deudas; la nota del club da 404.
 - **Sin precio:** Inter/Oaktree 2024 es la ejecución de una prenda; el préstamo impagado era de unos 395 M€.
 
+## Fase 3d: valoración con precios manuales, transacciones precedentes y football field (02/10/2026)
+
+Hecha el 02/10/2026 en Claude Code. Pendiente del OK del usuario a las decisiones 104 a 119.
+
+**Documentos de Cowork:** `estado.md`, `precios-30-06-2025.md` y `transacciones-precedentes.md`, revisados y subidos tal cual en un commit aparte (`ae48bea`).
+
+**Precios y valoración por comparables.** `register-manual` registró `manual/prices_2025-06-30.csv` (8 tickers, sha256 `653bcab4…`) y `valuation` escribió 43 filas, que pasan pandera. Cifras en millones de EUR:
+
+| Club | EV implícito P25 – mediana – P75 | Equity implícito P25 – mediana – P75 | EV: solo pares grandes (mediana) | Equity con traspasos netos (mediana) |
+| --- | --- | --- | --- | --- |
+| Arsenal | 669.5 – 957.8 – 1,861.3 | 310.1 – 598.5 – 1,501.9 | 2,866.3 | 795.3 |
+| Chelsea | 475.7 – 680.6 – 1,322.6 | 533.0 – 737.9 – 1,379.9 | 2,036.7 | hueco (traspasos) |
+| Liverpool | 681.3 – 974.7 – 1,894.1 | 345.2 – 638.6 – 1,558.0 | 2,916.9 | hueco (traspasos) |
+| Manchester City | 672.7 – 962.4 – 1,870.2 | 756.5 – 1,046.2 – 1,954.0 | 2,880.0 | 1,009.9 |
+| Tottenham Hotspur | 547.5 – 783.2 – 1,522.0 | (424.2) – (188.4) – 550.4 | 2,343.9 | (190.1) |
+| Newcastle United | 325.0 – 464.9 – 903.5 | 271.7 – 411.6 – 850.2 | 1,391.4 | 518.1 |
+
+- **Múltiplos EV / ingresos de los pares:**
+  - Juventus 3.49x, Celtic 0.77x, Manchester United 4.12x, Dortmund 0.86x, Ajax 0.77x, Benfica 1.47x, Lazio 0.83x y FC Porto 1.86x (ilíquido, precio del 27/06/2025).
+  - P25 – mediana – P75: base 0.81x – 1.17x – 2.26x; pares grandes 2.17x – 3.49x – 3.80x; con traspasos netos 1.14x – 1.59x – 2.99x, sin Celtic.
+- **Manchester City con `related_party_financing`:** equity mediano de 892.0.
+- **Prueba sin el propio club (leave-one-out), desviación frente a la mediana:**
+  - Juventus +307.1% (fuera de P25–P75), Celtic −48.1% (fuera), Manchester United +380.5% (fuera), Dortmund −41.9% (dentro), Ajax −47.6% (fuera), Benfica +72.1% (dentro), Lazio −43.8% (dentro) y FC Porto +116.8% (dentro).
+  - Los dos grandes valen en bolsa 4 o 5 veces lo que dice la mediana de los demás: la dispersión de los múltiplos es grande.
+
+**Transacciones precedentes** (sección 9 del plan; `config/transactions.yaml`).
+
+- **Fuentes de las cuentas de referencia** (en `config/sources.yaml`, en la temporada de cada una; robots.txt comprobado al bajar):
+  - Chelsea: Companies House, 02536231.
+  - Manchester United: el 20-F de 2023, en ir.manutd.com. robots.txt da 404, así que no hay restricciones; sec.gov responde 403 a la descarga automática.
+  - Milan: acmilan.com, el PDF en el CDN de Kontent, que lo permite.
+  - Newcastle: Companies House, 02529667.
+  - Everton: Companies House, 00036624.
+  - Roma: asroma.com, el PDF en S3. robots.txt de S3 da 403, así que no hay restricciones (RFC 9309).
+  - Todas, en el manifiesto con su sha256. Los tipos USD y GBP del BCE del 14/12 al 24/12/2023 son para Manchester United.
+- **Ejercicio de referencia comprobado:**
+
+| Operación | Anuncio | Ejercicio | Publicado | Prueba | Siguiente ejercicio |
+| --- | --- | --- | --- | --- | --- |
+| Chelsea | 07/05/2022 | 2020/21 | 29/12/2021 | depósito en Companies House | cierra el 30/06/2022, después del anuncio |
+| Manchester United | 24/12/2023 | 2022/23 | 27/10/2023 | página de firmas del 20-F | cierra el 30/06/2024 |
+| Milan | 01/06/2022 | 2020/21 | 26/10/2021 | aprobación de la junta (pág. 174) | cierra el 30/06/2022 |
+| Newcastle | 07/10/2021 | 13 meses a 31/07/2020 | 06/08/2021 | depósito en Companies House | 2020/21, depositado el 16/05/2022 |
+| Everton | 23/09/2024 | 2022/23 | 10/04/2024 | depósito en Companies House | 2023/24, depositado el 02/04/2025 |
+| Roma | 06/08/2020 | 2018/19 | 29/10/2019 | fecha en asroma.com | 2019/20, publicado el 26/10/2020 |
+
+- Everton y Roma cambian frente a lo que dejó Cowork (2023/24 y 2019/20): esas cuentas no estaban publicadas el día del anuncio.
+- **Extracción:** 120 cuadres, todos OK (2 por redondeo). Recortes en `data/interim/recortes/`; cifras y cuadres en `data/interim/cifras_<temporada>.csv` y `cuadres_<temporada>.csv`. Los tres PDF de Companies House son escaneos: Vision se pasó una vez y lo demás sale de la caché.
+  - Chelsea: 24 de 24.
+  - Manchester United: 30 de 30.
+  - Milan: 9 de 9.
+  - Newcastle: 17 de 17, con OCR de región en las notas 16 y 17.
+  - Everton: 28 de 28.
+  - Roma: 12 de 12.
+- **Tabla `transactions`** (10 filas, pandera OK). Millones en la moneda de las cuentas de cada operación:
+
+| Operación | Grupo | Variante | Ejercicio | Moneda | Precio publicado | Equity | Deuda neta | EV | Ingresos | EV / ingresos |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Chelsea | base | equity | 2020/21 | GBP | 2.500 M£ por las acciones | 2,500.0 | (16.4) | 2,483.6 | 434.9 | 5.71x |
+| Manchester United (INEOS) | base | equity | 2022/23 | GBP | 33 USD × 163.158.948 acciones = 5,384.2 M USD | 4,233.0 | 537.3 | 4,770.2 | 648.4 | 7.36x |
+| AC Milan (RedBird) | base | equity | 2020/21 | EUR | 1.200 M€ | 1,200.0 | 101.6 | 1,301.6 | 232.6 | 5.60x |
+| AC Milan (RedBird) | base | ev | 2020/21 | EUR | 1.200 M€ | 1,098.4 | 101.6 | 1,200.0 | 232.6 | 5.16x |
+| Newcastle United | solo prensa | equity | 13 meses a 31/07/2020 | GBP | 305 M£ (Reuters) | 305.0 | (62.7) | 242.3 | 152.6 | 1.59x |
+| Everton | solo prensa | equity | 2022/23 | GBP | «más de 400 M£» | 400.0 | 330.5 | 730.5 | 172.2 | 4.24x |
+| AS Roma | solo prensa | per_share | 2018/19 | EUR | 0,1165 € × 628.882.320 acciones = 73.3 | 73.3 | 237.4 | 310.6 | 232.8 | 1.33x |
+| AS Roma | solo prensa | ev | 2018/19 | EUR | 591 M€ «debiti compresi» | 353.6 | 237.4 | 591.0 | 232.8 | 2.54x |
+| City Football Group | fuera | — | — | — | — | — | — | — | — | grupo multiclub |
+| Inter (Oaktree) | fuera | — | — | — | — | — | — | — | — | ejecución de un préstamo, no una venta |
+
+- **Conversión de Manchester United:** el precio en USD pasa a GBP con los tipos del BCE del 22/12/2023, el último día con tipo antes del anuncio: USD 1.1023 y GBP 0.8666 por EUR. Son 0,78617 GBP por USD.
+- **`related_party_financing`, anotado y fuera del EV:**
+  - Chelsea: 29,6 millones con la matriz Fordstam.
+  - Newcastle: 106,9 millones de Mike Ashley.
+
+**Football field** (tabla `football_field`, 24 filas: 6 clubes × 4 métodos; pandera OK). Millones de EUR:
+
+| Club | EV comparables (P25 – mediana – P75) | EV pares grandes (P25 – mediana – P75) | EV transacciones base (mínimo – mediana – máximo) | Equity mediano: comparables | pares grandes | transacciones |
+| --- | --- | --- | --- | --- | --- | --- |
+| Arsenal | 669.5 – 957.8 – 1,861.3 | 1,785.2 – 2,866.3 – 3,124.7 | 4,599.9 – 4,693.9 – 6,046.3 | 598.5 | 2,506.9 | 4,334.5 |
+| Chelsea | 475.7 – 680.6 – 1,322.6 | 1,268.5 – 2,036.7 – 2,220.3 | 3,268.5 – 3,335.3 – 4,296.3 | 737.9 | 2,094.0 | 3,392.6 |
+| Liverpool | 681.3 – 974.7 – 1,894.1 | 1,816.7 – 2,916.9 – 3,179.8 | 4,681.0 – 4,776.6 – 6,152.9 | 638.6 | 2,580.8 | 4,440.5 |
+| Manchester City | 672.7 – 962.4 – 1,870.2 | 1,793.7 – 2,880.0 – 3,139.6 | 4,621.9 – 4,716.3 – 6,075.2 | 1,046.2 | 2,963.8 | 4,800.1 |
+| Tottenham Hotspur | 547.5 – 783.2 – 1,522.0 | 1,459.8 – 2,343.9 – 2,555.2 | 3,761.5 – 3,838.3 – 4,944.2 | (188.4) | 1,372.2 | 2,866.7 |
+| Newcastle United | 325.0 – 464.9 – 903.5 | 866.6 – 1,391.4 – 1,516.8 | 2,232.9 – 2,278.5 – 2,935.0 | 411.6 | 1,338.0 | 2,225.2 |
+
+- **Múltiplos de las transacciones base:** 5.60x (Milan como equity), 5.71x (Chelsea) y 7.36x (Manchester United). Son tres, así que van con mínimo, mediana y máximo.
+- **Sensibilidad con Milan como EV:** 5.16x – 5.71x – 7.36x. Está en la tabla como `transactions_milan_ev`.
+- **Lectura:** la mediana de las transacciones es unas 5 veces la de los 8 pares (5.71x frente a 1.17x). Son compras de control (la del United es minoritaria) hechas en 2020-2023, sobre ingresos de ejercicios con COVID en Chelsea, Milan y Newcastle. Los comparables son precios de minorías en bolsa, sin prima de control.
+
+**Tests:** 215 en verde (14 nuevos):
+
+- Transacciones: equity, EV y múltiplo a mano; precio por acción con tipo cruzado; errores de configuración; la fecha de publicación posterior al anuncio; las marcas de solo prensa.
+- Football field: mínimo-mediana-máximo frente a percentiles, y un caso a mano.
+
 ## Decisiones
 
 1. **Carpeta de trabajo:** `~/football-club-finance`.
@@ -932,12 +1026,39 @@ Tomada por el usuario el 29/09/2026:
 
 99. **No a yfinance:** el proyecto no descarga donde robots.txt lo prohíbe (sección 2 del plan). Precios a mano en `data/raw/manual/prices_2025-06-30.csv`, registrados con `register-manual`, con la plantilla en `config/plantillas/`; se borran los precios bajados con yfinance y su entrada del manifiesto, y se quita la dependencia.
 
+Tomadas por el usuario el 02/10/2026 (mensaje de la fase 3d):
+
+100. **Transacciones base** (fuente primaria del precio): Chelsea 2022, Manchester United/INEOS 2024 y AC Milan 2022. **Sensibilidad, solo prensa,** marcadas así en todas las salidas: Newcastle 2021, Everton 2024 y Roma 2020. **Fuera:** City Football Group/Silver Lake (multiclub) e Inter/Oaktree (ejecución de un préstamo).
+101. **Equity al 100 %:** Chelsea, 2.500 M£ (los 1.750 M£ comprometidos, aparte); Manchester United, 33,00 USD × todas las acciones de clase A y B del último 20-F antes del anuncio; Milan, 1.200 M€ como equity y como EV.
+102. **EV** = equity + `net_debt` del ejercicio de referencia, que es el último publicado el día del anuncio (comprobado y anotado). Múltiplo EV / `revenue_ex_player_trading` en la moneda de cada operación, sin pasar a EUR. Club sin fuente accesible: pendiente con motivo.
+103. **Football field** de los 6 ingleses: comparables con los 8 pares, con los pares grandes y con las transacciones base (mínimo-mediana-máximo si son menos de 4), en la tabla `football_field`.
+
+Tomadas en la fase 3d, pendientes del OK del usuario:
+
+104. **Manchester United, acciones:** las de la nota 22 del 20-F 2023 (54.634.231 A + 110.207.613 B − 1.682.896 en autocartera = 163.158.948), no las de la portada (54.537.360 A, que es la cifra de 2022). Es la regla de `shares_outstanding`. Anotado en `incoherencias-fuentes.md`.
+105. **Manchester United, moneda:** el precio en USD se pasa a GBP, la moneda de las cuentas, con los tipos del BCE del 22/12/2023 (último día con tipo antes del anuncio del domingo 24/12). Es la única conversión; el múltiplo no depende de ella.
+106. **Manchester United, fecha de publicación:** el 27/10/2023 de la página de firmas del 20-F. La fecha de presentación en la SEC no se ha comprobado: sec.gov responde 403 a la descarga automática.
+107. **Milan, fecha de publicación:** la aprobación de la junta, el 26/10/2021 (pág. 174). La web no fecha el PDF. Es la única cuenta posible: 2021/22 cierra el 30/06/2022, después del anuncio.
+108. **Milan, marco contable:** principios italianos (OIC, pág. 31), no NIIF. Solo está la versión inglesa en la web del club.
+109. **Milan, ingresos:** 1 Revenues from sales and services + 5 Other revenues and income = 260.941. El Value of production (261.092) incluye la variación de existencias (150), que no es ingreso. Sin traspasos: 232.560, restando las cesiones (63), las plusvalías (20.185) y «other income from player management» (8.133), que son variables y bonus de traspasos (pág. 64).
+110. **Milan, deuda:** el préstamo de UniCredit a Casa Milan (41.375) y el factoring con recurso (83.843) son borrowings, 125.218 en total, como el factoring de Juventus y Porto (decisión 76).
+111. **Milan en el football field:** entra la variante de equity (regla general EV = equity + deuda neta). La de EV va como sensibilidad, `transactions_milan_ev`.
+112. **Newcastle:** las cuentas de referencia son de 13 meses (01/07/2019 a 31/07/2020) y no se anualizan. El préstamo de Ashley (106.912) «continues to be interest free, is repayable on demand» (nota 23): va a `related_party_financing` y no a borrowings (decisión 90), así que la deuda neta es −62,7 millones. Las obligaciones por arrendamiento financiero y HP (290) son arrendamientos.
+113. **Newcastle, precio:** 305 M£ de Reuters, no los 300 M£ de Al Jazeera. Es la oferta de 2020, no un precio pagado en 2021.
+114. **Chelsea:** los 29.550 con la matriz Fordstam no devengan interés (nota 11: todos los gastos financieros son la actualización de traspasos aplazados) y las cuentas no dan su calendario, así que van a `related_party_financing`. Borrowings: 0, derivado de las notas 21 y 22.
+115. **Everton:** borrowings, 341.385: los préstamos con interés (el CLBILS y los 22,5 millones del accionista). El préstamo sin interés de 450.751 de Bluesky Capital (Moshiri) es patrimonio en las cuentas (FRS 102.22, nota 18), no pasivo, y no entra. Precio: «más de 400 M£» como 400, sin escalar al 100 %.
+116. **Everton y Roma, ejercicio de referencia:** 2022/23 y 2018/19, no los 2023/24 y 2019/20 de Cowork. Esas cuentas se publicaron después del anuncio.
+117. **Roma:** dos variantes, 0,1165 € × 628.882.320 acciones como equity, y los 591 M€ «debiti compresi» como EV. Los préstamos de NEEP Roma Holding (24.400 + 4.680) van en borrowings: tienen vencimientos y un interés condicionado a la rentabilidad del grupo NEEP, con tope del 10 % (nota 18). Ingresos: Totale Ricavi (232.753), que no incluye los traspasos.
+118. **Recortes de OCR:** en Newcastle, las notas 16 y 17 se leen con OCR de la región del rótulo y la columna del grupo 2020. En Everton, el total en negrita de la columna Other loans de 2023 se lee como 349.385 donde la imagen dice 341.385: el cuadre va en la columna Total.
+119. **Tabla `transactions`:** sin temporada, se sustituye entera; `football_field` va por temporada, como `valuation`.
+
 ## Pendientes
 
 | Pendiente | Para cuándo | Detalle |
 | --- | --- | --- |
-| Registrar los precios del 30/06/2025 | Ya, en Claude Code | `data/raw/manual/prices_2025-06-30.csv` está relleno (Cowork, 29/09/2026). Falta `register-manual` y `valuation`, y revisar la tabla final, las sensibilidades y la prueba sin el propio club. FC Porto: confirmado sin negociación el 30/06, precio del 27/06 |
-| Transacciones precedentes | Decisión del usuario | Documentadas en `docs/transacciones-precedentes.md`. Falta decidir si se usan (y cómo) en la valoración o solo en el README. Huecos: precio sin fuente primaria en Newcastle, Everton y Roma; cierre de Roma solo por titulares de prensa; Olympique Lyonnais sin documentar |
+| OK a la fase 3d | Ya | Decisiones 104 a 119 |
+| Transacciones solo de prensa | Opcional | Newcastle, Everton y Roma no tienen precio con fuente primaria. Para Newcastle habría que localizar las cuentas de la sociedad compradora; para Roma, el documento de la OPA en la CONSOB. Olympique Lyonnais sigue sin documentar |
+| Fecha de presentación del 20-F de 2023 en la SEC | Opcional | sec.gov responde 403 a la descarga automática; se ha usado la fecha de la página de firmas (27/10/2023) |
 | Precio de Celtic | Opcional | Leído en la etiqueta del gráfico de la LSE (195 peniques). El volumen del día sale redondeado (1.6K) |
 | SCR aproximado | Cuando haya 2022/23 y 2023/24 | Hueco: faltan dos ejercicios para el promedio de traspasos a 3 años |
 | PDF manual de Arsenal | Opcional | Si el usuario lo deja en `data/raw/manual/arsenal_2024-25.pdf`, pasa a ser la fuente principal. Hay que añadirlo a `sources.yaml` con su URL y registrarlo |
@@ -948,5 +1069,5 @@ El resto de comprobaciones de la fase 2 está en la sección 7.1 y en los riesgo
 
 ## Siguiente paso
 
-1. Claude Code: subir los dos documentos nuevos de `docs/` y este `estado.md`, ejecutar `register-manual` y `valuation` con `data/raw/manual/prices_2025-06-30.csv`, y revisar la tabla final, las sensibilidades y la prueba sin el propio club.
-2. Usuario: decidir el uso de las transacciones precedentes (`docs/transacciones-precedentes.md`).
+1. Usuario: revisar la fase 3d (valoración con precios manuales, transacciones y football field) y dar el OK a las decisiones 104 a 119.
+2. Después, la fase 4 del plan.

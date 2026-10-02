@@ -181,3 +181,64 @@ def backtest_table(valuation: pd.DataFrame, scenario: str = "base") -> str:
             + f" | {percent(row['backtest_deviation'])} | "
             f"{yes_no(row['backtest_within_p25_p75'])} | {percent(row['deviation_incl_self'])} |")
     return "\n".join(lines)
+
+
+def _range(low, mid, high, formatter) -> str:
+    return f"{formatter(low)} – {formatter(mid)} – {formatter(high)}"
+
+
+TIER_LABELS = {"base": "base", "press_only": "solo prensa", "excluded": "fuera"}
+
+
+def transactions_table(transactions: pd.DataFrame) -> str:
+    """Una fila por operación y variante, en la moneda de las cuentas de cada una (millones)."""
+    lines = ["| Operación | Grupo | Variante | Ejercicio de ref. (publicado) | Moneda | Precio "
+             "publicado | Equity | Deuda neta | EV | Ingresos | EV / ingresos |",
+             "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |"]
+    for row in transactions.itertuples(index=False):
+        if row.status != "ok":
+            lines.append(f"| {row.name} | {TIER_LABELS[row.tier]} | — | — | {row.price_currency}"
+                         f" | — | — | — | — | — | {row.status}: {row.reason} |")
+            continue
+        price = (f"{row.price_per_share:g} {row.price_currency}/acción × "
+                 f"{row.shares_outstanding:,} = {millions(row.price_amount)}"
+                 if row.basis == "per_share" else
+                 f"{millions(row.price_amount)} {row.price_currency} ({row.basis})")
+        lines.append(
+            f"| {row.name} | {TIER_LABELS[row.tier]} | {row.variant} | {row.reference_season} "
+            f"({row.reference_published}) | {row.currency} | {price} | "
+            f"{millions(row.equity_value)} | {millions(row.net_debt)} | {millions(row.ev)} | "
+            f"{millions(row.revenue_ex_player_trading)} | {multiple(row.ev_to_revenue)} |")
+    return "\n".join(lines)
+
+
+def football_field_table(field: pd.DataFrame) -> str:
+    """La tabla final: rango de EV de cada método y el equity mediano de cada uno (millones de
+    EUR)."""
+    names = _names()
+    methods = ("comparables", "large_peers", "transactions")
+    lines = ["| Club | EV comparables (P25 – mediana – P75) | EV pares grandes (P25 – mediana – "
+             "P75) | EV transacciones base | Equity mediano: comparables | pares grandes | "
+             "transacciones |",
+             "| --- | --- | --- | --- | --- | --- | --- |"]
+    for club_id in _order(field["club_id"]):
+        rows = field[field["club_id"] == club_id].set_index("method")
+        ranges = [_range(rows.loc[m, "ev_low"], rows.loc[m, "ev_mid"], rows.loc[m, "ev_high"],
+                         millions) for m in methods]
+        statistic = rows.loc["transactions", "statistic"]
+        ranges[2] += f" ({statistic})"
+        equity = [millions(rows.loc[m, "equity_mid"]) for m in methods]
+        lines.append(f"| {names.get(club_id, club_id)} | " + " | ".join(ranges + equity) + " |")
+    return "\n".join(lines)
+
+
+def football_field_multiples(field: pd.DataFrame) -> str:
+    """Los múltiplos de cada método (iguales para todos los clubes) y sus entradas."""
+    first = field[field["club_id"] == field["club_id"].iloc[0]]
+    lines = ["| Método | Estadístico | n | Múltiplos | Entradas |",
+             "| --- | --- | --- | --- | --- |"]
+    for row in first.itertuples(index=False):
+        lines.append(f"| {row.method} | {row.statistic} | {row.n} | "
+                     f"{_range(row.multiple_low, row.multiple_mid, row.multiple_high, multiple)} | "
+                     f"{row.inputs} |")
+    return "\n".join(lines)

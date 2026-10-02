@@ -24,11 +24,22 @@ import os
 import statistics
 import sys
 from dataclasses import asdict, fields
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 from dotenv import load_dotenv
 
-from pitch_to_balance_sheet import facts, fx, manifest, market, metrics, report, valuation
+from pitch_to_balance_sheet import (
+    facts,
+    football_field,
+    fx,
+    manifest,
+    market,
+    metrics,
+    report,
+    transactions,
+    valuation,
+)
+from pitch_to_balance_sheet.concepts import MULTIPLIERS
 from pitch_to_balance_sheet.config import (
     PROCESSED_DIR,
     RAW_DIR,
@@ -39,6 +50,7 @@ from pitch_to_balance_sheet.config import (
 )
 from pitch_to_balance_sheet.extract import run
 from pitch_to_balance_sheet.extract.clubs import SPECS
+from pitch_to_balance_sheet.extract.references import REFERENCE_SPECS
 from pitch_to_balance_sheet.extract.text_layer import KEYWORDS, column_name, measure
 from pitch_to_balance_sheet.sources import web
 from pitch_to_balance_sheet.sources.companies_house import (
@@ -68,7 +80,9 @@ def download(season: str) -> int:
         club_sources = sources.get(club.club_id)
         if club_sources is None or all(s.kind != "companies_house" for s in club_sources.all):
             continue
-        made_up_date = fiscal_year_end_date(season, club.fiscal_year_end)
+        made_up_date = (date.fromisoformat(club_sources.primary.made_up_date)
+                        if club_sources.primary.made_up_date
+                        else fiscal_year_end_date(season, club.fiscal_year_end))
         log.info("%s (%s): cuentas cerradas a %s", club.name, club.companies_house_number,
                  made_up_date)
         try:
@@ -81,6 +95,28 @@ def download(season: str) -> int:
             log.info("  %s  %d bytes  sha256 %s", entry.file, entry.bytes, entry.sha256)
         documents.append(document)
 
+    path = _write_filings(season, {document.club_id: _filing_row(document)
+                                   for document in documents})
+    log.info("Presentaciones en %s", path.relative_to(ROOT))
+    return 0
+
+
+def _filing_row(document: AccountsDocument) -> dict:
+    row = asdict(document)
+    row["formats"] = " + ".join(document.formats)
+    row["files"] = " + ".join(document.files)
+    return row
+
+
+def _read_filings(season: str) -> dict[str, dict]:
+    path = filings_path(season)
+    if not path.exists():
+        return {}
+    with path.open(newline="", encoding="utf-8") as f:
+        return {row["club_id"]: row for row in csv.DictReader(f)}
+
+
+def _write_filings(season: str, rows: dict[str, dict]):
     path = filings_path(season)
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", newline="", encoding="utf-8") as f:
@@ -88,39 +124,35 @@ def download(season: str) -> int:
             f, fieldnames=[field.name for field in fields(AccountsDocument)], lineterminator="\n"
         )
         writer.writeheader()
-        for document in documents:
-            row = asdict(document)
-            row["formats"] = " + ".join(document.formats)
-            row["files"] = " + ".join(document.files)
-            writer.writerow(row)
-    log.info("Presentaciones en %s", path.relative_to(ROOT))
-    return 0
+        writer.writerows(rows.values())
+    return path
+
+
+def _download_url(label: str, file: str, url: str) -> str | None:
+    """Baja un archivo de la web si falta y lo registra; si ya está, comprueba su sha256.
+    Devuelve el error, o None."""
+    if (RAW_DIR / file).exists():
+        try:
+            manifest.verify(RAW_DIR, file, MANIFEST)
+        except manifest.ManifestError as exc:
+            return f"{label}: {exc}"
+        log.info("%s: data/raw/%s ya descargado y con su sha256", label, file)
+        return None
+    try:
+        entry = web.download_file(url, RAW_DIR, file)
+    except web.WebDownloadError as exc:
+        return f"{label}: {exc}"
+    manifest.upsert(MANIFEST, [entry])
+    log.info("%s: data/raw/%s  %d bytes  sha256 %s", label, entry.file, entry.bytes,
+             entry.sha256)
+    return None
 
 
 def download_web(season: str) -> int:
     """Descarga los archivos de la web (fuentes url) que falten y los registra en el manifiesto."""
-    errors = []
-    for club_id, club_sources in load_sources(season).items():
-        for source in club_sources.all:
-            if source.kind != "url":
-                continue
-            if (RAW_DIR / source.file).exists():
-                try:
-                    manifest.verify(RAW_DIR, source.file, MANIFEST)
-                except manifest.ManifestError as exc:
-                    errors.append(f"{club_id}: {exc}")
-                else:
-                    log.info("%s: data/raw/%s ya descargado y con su sha256", club_id,
-                             source.file)
-                continue
-            try:
-                entry = web.download_file(source.url, RAW_DIR, source.file)
-            except web.WebDownloadError as exc:
-                errors.append(f"{club_id}: {exc}")
-                continue
-            manifest.upsert(MANIFEST, [entry])
-            log.info("%s: data/raw/%s  %d bytes  sha256 %s", club_id, entry.file, entry.bytes,
-                     entry.sha256)
+    errors = [error for club_id, club_sources in load_sources(season).items()
+              for source in club_sources.all if source.kind == "url"
+              for error in [_download_url(club_id, source.file, source.url)] if error]
     for error in errors:
         print(f"error: {error}", file=sys.stderr)
     return 1 if errors else 0
@@ -154,6 +186,87 @@ def download_fx(season: str) -> int:
         manifest.upsert(MANIFEST, [entry])
         log.info("%s: data/raw/%s  %d tipos del %s al %s  sha256 %s", currency, file,
                  len(rates), min(rates), max(rates), entry.sha256)
+    for error in errors:
+        print(f"error: {error}", file=sys.stderr)
+    return 1 if errors else 0
+
+
+def download_transactions(season: str) -> int:
+    """Cuentas de los ejercicios de referencia de las transacciones precedentes (Companies House
+    o web, según config/sources.yaml) y los tipos del BCE de las operaciones con el precio en
+    otra moneda que las cuentas. La temporada no se usa: cada operación lleva la suya."""
+    del season
+    load_dotenv(ROOT / ".env")
+    try:
+        deals = [deal for deal in transactions.load_deals() if deal.tier != "excluded"]
+        clubs = transactions.all_clubs()
+    except transactions.TransactionsError as exc:
+        print(f"error: transacciones: {exc}", file=sys.stderr)
+        return 1
+    errors, client = [], None
+    for deal in deals:
+        season = deal.reference.season
+        try:
+            source = load_sources(season)[deal.club_id].primary
+        except (ValueError, KeyError):
+            errors.append(f"{deal.deal_id}: config/sources.yaml no tiene la fuente de "
+                          f"{deal.club_id} en {season}")
+            continue
+        label = f"{deal.deal_id} ({season})"
+        if source.kind == "url":
+            error = _download_url(label, source.file, source.url)
+            errors += [error] if error else []
+            continue
+        if source.kind == "manual":
+            try:
+                manifest.verify(RAW_DIR, source.file, MANIFEST)
+            except manifest.ManifestError as exc:
+                errors.append(f"{label}: {exc}. Descárgalo a mano de {source.url} y regístralo "
+                              "con register-manual")
+            continue
+        club = clubs[deal.club_id]
+        made_up_date = transactions.period_end(deal, club, source.made_up_date)
+        filings = _read_filings(season)
+        previous = filings.get(club.club_id)
+        if previous and previous["made_up_date"] == made_up_date.isoformat():
+            try:
+                for file in previous["files"].split(" + "):
+                    manifest.verify(RAW_DIR, file, MANIFEST)
+            except manifest.ManifestError as exc:
+                errors.append(f"{label}: {exc}")
+            else:
+                log.info("%s: cuentas a %s ya descargadas", label, made_up_date)
+            continue
+        try:
+            client = client or CompaniesHouseClient(
+                os.environ.get("COMPANIES_HOUSE_API_KEY", "").strip())
+            document, entries = download_accounts(client, club, made_up_date, RAW_DIR)
+        except CompaniesHouseError as exc:
+            errors.append(f"{label}: {club.name} ({club.companies_house_number}): {exc}")
+            continue
+        manifest.upsert(MANIFEST, entries)
+        filings[club.club_id] = _filing_row(document)
+        _write_filings(season, filings)
+        log.info("%s: cuentas a %s depositadas el %s; %s", label, made_up_date,
+                 document.filing_date, " + ".join(document.files))
+    for deal in deals:
+        spec = REFERENCE_SPECS.get((deal.club_id, deal.reference.season))
+        if spec is None:
+            errors.append(f"{deal.deal_id}: no hay extractor de {deal.club_id} "
+                          f"{deal.reference.season} (extract/references/)")
+            continue
+        start, end = transactions.rates_window(deal)
+        for currency in sorted({deal.price_currency, spec.currency} - {fx.BASE}
+                               if deal.price_currency != spec.currency else set()):
+            file = transactions.rates_file(currency, deal)
+            error = _download_url(f"{deal.deal_id} {currency}", file,
+                                  fx.download_url(currency, start, end))
+            if error is None:
+                try:
+                    fx.load_rates(RAW_DIR / file, currency)
+                except fx.FxError as exc:
+                    error = f"{deal.deal_id} {currency}: {exc}"
+            errors += [error] if error else []
     for error in errors:
         print(f"error: {error}", file=sys.stderr)
     return 1 if errors else 0
@@ -462,6 +575,139 @@ def run_valuation(season: str) -> int:
     return 0
 
 
+def _reference_financials(result: run.ClubResult, period_end) -> transactions.Financials:
+    """Las cifras de las cuentas de referencia, en unidades de la moneda."""
+    spec = result.spec
+    figures = {figure.concept: figure for figure in result.figures}
+    missing = [c for c in ("revenue_ex_player_trading", "borrowings", "cash") if c not in figures]
+    if missing:
+        raise transactions.TransactionsError(f"{spec.club_id}: faltan {', '.join(missing)}")
+
+    def full(concept):
+        figure = figures.get(concept)
+        if figure is None:
+            return None
+        return run._full(figure.value, MULTIPLIERS[figure.unit or spec.unit])
+
+    used = ("revenue_ex_player_trading", "borrowings", "cash", "shares_outstanding",
+            "related_party_financing")
+    sources = "; ".join(
+        f"{concept}: pág. {figures[concept].page} ({result.crops.get(concept, 'sin recorte')})"
+        for concept in used if concept in figures)
+    return transactions.Financials(
+        spec.currency, period_end, full("revenue_ex_player_trading"), full("borrowings"),
+        full("cash"), full("shares_outstanding"), full("related_party_financing"),
+        f"{result.source}: {result.pdf}", result.sha256, sources)
+
+
+def run_transactions(season: str, reocr: bool = False) -> int:
+    """Transacciones precedentes: cuentas de referencia (extracción con cuadres y recortes),
+    precio, EV y EV / ingresos de cada operación, a la tabla transactions. La temporada no se
+    usa: cada operación lleva la suya."""
+    del season
+    try:
+        deals = transactions.load_deals()
+        clubs = transactions.all_clubs()
+    except transactions.TransactionsError as exc:
+        print(f"error: transacciones: {exc}", file=sys.stderr)
+        return 1
+    financials, rates, pending, errors = {}, {}, {}, []
+    results: dict[str, list] = {}
+    fiscal_year_ends: dict[str, dict[str, str]] = {}
+    for deal in deals:
+        if deal.tier == "excluded":
+            continue
+        season = deal.reference.season
+        spec = REFERENCE_SPECS.get((deal.club_id, season))
+        try:
+            source = load_sources(season)[deal.club_id].primary
+        except (ValueError, KeyError):
+            pending[deal.deal_id] = (f"sin fuente accesible de las cuentas de {season} en "
+                                     "config/sources.yaml")
+            continue
+        if spec is None:
+            errors.append(f"{deal.deal_id}: no hay extractor de {deal.club_id} {season}")
+            continue
+        result = run.extract_club(season, spec, reocr)
+        print(f"\n== {deal.deal_id} · {deal.club_id} {season} · {result.source or '—'} · "
+              f"{result.pdf or '—'}")
+        for figure in result.figures:
+            print(f"  {figure.concept}: {figure.value:,} ({figure.unit or spec.unit}, "
+                  f"{spec.currency}) · {figure.sources} · {figure.ocr_note}")
+        print(f"  cuadres: {sum(c.ok for c in result.checks)} de {len(result.checks)} OK, "
+              f"{len(result.rounded)} por redondeo")
+        for check in result.failed:
+            print(f"  FALLA pág. {check.page} [{check.column}] {check.relation}: "
+                  f"{check.reported:,} frente a {check.computed:,}")
+        if result.error:
+            errors.append(f"{deal.deal_id}: {result.error}")
+            continue
+        period_end = transactions.period_end(deal, clubs[deal.club_id], source.made_up_date)
+        results.setdefault(season, []).append(result)
+        fiscal_year_ends.setdefault(season, {})[deal.club_id] = f"{period_end:%m-%d}"
+        try:
+            financials[deal.deal_id] = _reference_financials(result, period_end)
+            if deal.price_currency != spec.currency:
+                series = {}
+                for currency in {deal.price_currency, spec.currency} - {fx.BASE}:
+                    file = transactions.rates_file(currency, deal)
+                    manifest.verify(RAW_DIR, file, MANIFEST)
+                    series[currency] = fx.load_rates(RAW_DIR / file, currency)
+                rates[deal.deal_id] = transactions.cross_rate(
+                    series.get(deal.price_currency), series.get(spec.currency),
+                    deal.price_currency, spec.currency, deal.announced)
+        except (transactions.TransactionsError, manifest.ManifestError, fx.FxError) as exc:
+            errors.append(f"{deal.deal_id}: {exc}")
+    written = [path for season, season_results in results.items()
+               for path in run.write_outputs(season, season_results, fiscal_year_ends[season])]
+    if errors:
+        for error in errors:
+            print(f"error: {error}", file=sys.stderr)
+        return 1
+    try:
+        frame = transactions.to_frame(transactions.compute(deals, financials, rates, pending))
+        problems = transactions.validate(frame)
+        if problems:
+            raise transactions.TransactionsError("no pasa pandera: " + "; ".join(problems))
+    except transactions.TransactionsError as exc:
+        print(f"error: transacciones: {exc}", file=sys.stderr)
+        return 1
+    database = PROCESSED_DIR / facts.DATABASE
+    facts.replace_table(database, "transactions", frame)
+    print(f"\nTransacciones: {len(frame)} filas; pandera OK. En millones de la moneda de las "
+          "cuentas de cada operación.")
+    print("\n" + report.transactions_table(frame))
+    for row in frame[frame["fx_note"] != ""].itertuples(index=False):
+        print(f"\n{row.deal_id}: precio pasado a {row.currency} con {row.fx_note}")
+    print("\n" + "\n".join(written))
+    print(f"{database.relative_to(ROOT)}: tabla transactions")
+    return 0
+
+
+def run_football_field(season: str) -> int:
+    """Football field de los ingleses no cotizados: comparables (tabla valuation) y
+    transacciones base (tabla transactions), a la tabla football_field."""
+    database = PROCESSED_DIR / facts.DATABASE
+    try:
+        valuation_frame = facts.read_table(database, "valuation", season)
+        transactions_frame = facts.read_table(database, "transactions")
+        targets = [club.club_id for club in load_clubs() if not club.ticker]
+        frame = football_field.to_frame(
+            football_field.build(valuation_frame, transactions_frame, targets, season))
+        problems = football_field.validate(frame)
+        if problems:
+            raise football_field.FootballFieldError("no pasa pandera: " + "; ".join(problems))
+        facts.replace_season(database, "football_field", frame, season)
+    except (facts.FactsError, football_field.FootballFieldError) as exc:
+        print(f"error: football field: {exc}", file=sys.stderr)
+        return 1
+    print(f"Football field {season}: {len(frame)} filas; pandera OK. En millones de EUR.")
+    print("\n" + report.football_field_multiples(frame))
+    print("\n" + report.football_field_table(frame))
+    print(f"\n{database.relative_to(ROOT)}: tabla football_field")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m pitch_to_balance_sheet")
     commands = parser.add_subparsers(dest="command", required=True)
@@ -469,16 +715,23 @@ def main(argv: list[str] | None = None) -> int:
         ("download", "descarga las cuentas de Companies House de una temporada"),
         ("download-web", "descarga los PDFs de la web de los clubes (fuentes url)"),
         ("download-fx", "descarga los tipos de referencia diarios del BCE (monedas no EUR)"),
+        ("download-transactions", "descarga las cuentas de referencia de las transacciones "
+                                  "precedentes y sus tipos del BCE"),
         ("register-manual", "registra en el manifiesto los PDFs y los precios bajados a mano"),
         ("text-layer", "mide la capa de texto de los PDFs locales de config/sources.yaml"),
         ("extract", "cifras de la cuenta de resultados y del balance, con cuadres y recortes"),
         ("facts", "fact_financials en EUR (parquet y DuckDB) y las métricas, validadas"),
         ("valuation", "valoración por comparables, con los precios manuales, a la tabla valuation"),
+        ("transactions", "transacciones precedentes: cuentas de referencia, EV y múltiplos, a la "
+                         "tabla transactions"),
+        ("football-field", "football field de los ingleses no cotizados, a la tabla "
+                           "football_field"),
     ):
         command = commands.add_parser(name, help=help_text)
         command.add_argument("--season", default="2024/25", help="temporada, p. ej. 2024/25")
-        if name == "extract":
-            command.add_argument("--club", help="club_id, p. ej. chelsea (todos si se omite)")
+        if name in ("extract", "transactions"):
+            if name == "extract":
+                command.add_argument("--club", help="club_id, p. ej. chelsea (todos si se omite)")
             command.add_argument("--reocr", action="store_true",
                                  help="vuelve a pasar Apple Vision (solo macOS); sin esta opción "
                                       "se lee el OCR guardado en data/interim/ocr/")
@@ -492,13 +745,17 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     if args.command == "extract":
         return extract(args.season, args.club, args.reocr)
+    if args.command == "transactions":
+        return run_transactions(args.season, args.reocr)
     commands_by_name = {
         "download": download,
         "download-web": download_web,
         "download-fx": download_fx,
+        "download-transactions": download_transactions,
         "register-manual": register_manual,
         "text-layer": text_layer,
         "facts": build_facts,
         "valuation": run_valuation,
+        "football-field": run_football_field,
     }
     return commands_by_name[args.command](args.season)

@@ -315,6 +315,26 @@ def replace_season(database: Path, table: str, frame: pd.DataFrame, season: str)
         con.execute(f"INSERT INTO {table} SELECT * FROM rows")
 
 
+def replace_table(database: Path, table: str, frame: pd.DataFrame) -> None:
+    """Sustituye la tabla entera (una que no va por temporadas, como transactions)."""
+    with duckdb.connect(str(database)) as con:
+        con.register("rows", frame)
+        con.execute(f"CREATE OR REPLACE TABLE {table} AS SELECT * FROM rows")
+
+
+def read_table(database: Path, table: str, season: str | None = None) -> pd.DataFrame:
+    """Una tabla de football.duckdb, o sus filas de una temporada. Si no existe, FactsError."""
+    if not database.exists():
+        raise FactsError(f"falta {database.name}: ejecuta antes facts")
+    with duckdb.connect(str(database), read_only=True) as con:
+        tables = {row[0] for row in con.execute("SHOW TABLES").fetchall()}
+        if table not in tables:
+            raise FactsError(f"{database.name} no tiene la tabla {table}")
+        if season is None:
+            return con.execute(f"SELECT * FROM {table}").df()
+        return con.execute(f"SELECT * FROM {table} WHERE season = ?", [season]).df()
+
+
 def read(season: str, directory: Path = PROCESSED_DIR) -> pd.DataFrame:
     """fact_financials de una temporada, desde su parquet."""
     path = facts_path(season, directory)

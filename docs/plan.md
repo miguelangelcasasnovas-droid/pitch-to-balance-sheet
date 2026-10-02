@@ -344,6 +344,31 @@ En la fase 3 cada fórmula tiene un test con un caso calculado a mano, y el dash
 - **Prueba sobre los cotizados:** cada cotizado recibe también un EV implícito. La versión principal es sin el propio club (leave-one-out, decisión del usuario del 29/09/2026): percentiles de los demás pares, desviación = EV real / EV implícito mediano − 1 y si cae dentro de P25–P75. Con el propio club, como referencia.
 - **Almacenamiento:** tablas `metrics` (una fila por club, temporada y métrica, con `status` ok, gap o not_comparable y su motivo) y `valuation` (una fila por club, temporada y escenario, con la fuente de cada precio) en `football.duckdb`, validadas con pandera. `metrics` la escribe `facts`, porque no depende de los precios; `valuation`, el comando `valuation`.
 
+**Transacciones precedentes (decisión del usuario del 02/10/2026):** las operaciones están en `config/transactions.yaml`, con las citas y fuentes de [`transacciones-precedentes.md`](transacciones-precedentes.md).
+
+- **Base (precio con fuente primaria):** Chelsea 2022, Manchester United/INEOS 2024 y AC Milan 2022.
+- **Sensibilidad, solo prensa:** Newcastle 2021, Everton 2024 y Roma 2020. Van marcadas «solo prensa» en todas las salidas (`tier` = `press_only` y la columna `marks` de la tabla) y no entran en el football field.
+- **Fuera, con motivo:** City Football Group/Silver Lake (grupo multiclub: el precio y los ingresos serían de CFG, no de un club) e Inter/Oaktree (ejecución de un préstamo impagado, no una venta).
+- **Valor del equity al 100 %:**
+  - Chelsea: 2.500 M£ por las acciones. Los 1.750 M£ de inversión comprometida no son precio: van anotados aparte.
+  - Manchester United: 33,00 USD × todas las acciones de clase A y B del 20-F más reciente antes del anuncio. Se toman de la nota de capital, emitidas menos las de autocartera, como en `shares_outstanding`, porque la portada del 20-F de 2023 da la cifra de clase A de 2022 (`incoherencias-fuentes.md`).
+  - Milan: 1.200 M€ en dos variantes, como equity y como EV.
+  - Sensibilidades: Newcastle, 305 M£ (Reuters; Al Jazeera da 300); Everton, «más de 400 M£» (AFP citando a la BBC), sin escalar al 100 %; Roma, 0,1165 € por acción × todas las acciones, y también los 591 M€ «debiti compresi» como EV.
+- **EV** = equity + `net_debt` (la principal: borrowings − cash) del ejercicio de referencia. En la variante de EV, equity implícito = EV − `net_debt`. Los préstamos de vinculadas sin interés ni calendario (`related_party_financing`) se anotan, pero no entran.
+- **Ejercicio de referencia:** el último cuyas cuentas ya estaban publicadas el día del anuncio, comprobado con la fecha de depósito en Companies House, la de firma del 20-F o la de publicación o aprobación del informe. Cada operación lleva la fecha y la prueba en `reference`, y la configuración da error si la fecha es posterior al anuncio. Resultado: Chelsea 2020/21; Manchester United 2022/23; Milan 2020/21; Newcastle, el periodo de 13 meses a 31/07/2020, sin anualizar; Everton 2022/23; Roma 2018/19.
+- **Cuentas de referencia:** `revenue_ex_player_trading`, `borrowings`, `cash` y, donde hace falta, `shares_outstanding`, con las reglas de siempre (fuente en `config/sources.yaml` en la temporada de referencia, cuadres, recortes, OCR desde la caché y robots.txt). Los extractores están en `src/pitch_to_balance_sheet/extract/references/`. Si un club no tiene fuente accesible, la operación queda `pending` con el motivo.
+- **Múltiplo** = EV / `revenue_ex_player_trading`, en la moneda de las cuentas de cada operación, sin pasar a EUR. La única conversión es la del precio de Manchester United, de USD a GBP, con los tipos del BCE del día del anuncio o del último anterior con tipo (22/12/2023).
+- **Comandos:** `download-transactions` baja las cuentas y los tipos; `transactions` extrae, calcula y escribe la tabla `transactions` de `football.duckdb`, validada con pandera.
+
+**Football field (decisión del usuario del 02/10/2026):** para los 6 ingleses no cotizados, EV y equity implícitos con tres métodos, en la tabla `football_field` (una fila por club, temporada y método), validada con pandera:
+
+- `comparables`: P25, mediana y P75 de los 8 pares (escenario `base` de `valuation`);
+- `large_peers`: lo mismo con los pares grandes;
+- `transactions`: los múltiplos de las transacciones base, uno por operación (la variante de equity: Milan como equity). Con menos de 4 múltiplos, mínimo, mediana y máximo; con 4 o más, P25, mediana y P75.
+- `transactions_milan_ev`: sensibilidad, igual pero con Milan como EV.
+
+EV implícito = múltiplo × `revenue_ex_player_trading` en EUR, redondeado al euro; equity implícito = EV − `net_debt` en EUR. Los comparables son precios de participaciones minoritarias, sin prima de control. Las transacciones son compras de control y la llevan; la excepción es Manchester United, que es minoritaria.
+
 ## 10. Riesgos y mitigaciones
 
 El riesgo que más puede cambiar el proyecto es que las cuentas inglesas sean imágenes escaneadas: sin ellas no hay clubes que valorar. Por eso la medición de la sección 7.1 va lo primero en la fase 2.

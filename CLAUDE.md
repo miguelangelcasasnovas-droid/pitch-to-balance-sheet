@@ -47,4 +47,7 @@ uv run python -m pitch_to_balance_sheet extract --reocr     # ídem, volviendo a
 uv run python -m pitch_to_balance_sheet download-fx       # tipos de referencia del BCE
 uv run python -m pitch_to_balance_sheet facts             # fact_financials en EUR y métricas (parquet y DuckDB)
 uv run python -m pitch_to_balance_sheet valuation         # valoración con los precios manuales (tabla valuation)
+uv run python -m pitch_to_balance_sheet download-transactions  # cuentas de referencia y tipos de las transacciones
+uv run python -m pitch_to_balance_sheet transactions      # transacciones precedentes (tabla transactions)
+uv run python -m pitch_to_balance_sheet football-field    # football field de los ingleses (tabla football_field)
 ```

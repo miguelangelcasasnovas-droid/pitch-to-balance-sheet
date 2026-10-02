@@ -125,3 +125,47 @@
         note: >-
           Comunicado de resultados 2024/25 del portal de transparencia. Las cifras que trae tienen
           que coincidir; las que no trae quedan sin control.
+
+# Ejercicios de referencia de las transacciones precedentes (config/transactions.yaml; decisión
+# del usuario del 02/10/2026). No son temporadas del universo: solo se extraen
+# revenue_ex_player_trading, net_debt (borrowings y cash) y, donde el precio es por acción,
+# shares_outstanding. Se bajan con download-transactions y se leen con transactions.
+"2018/19":
+  roma:
+    primary:
+      kind: url
+      url: https://s3-eu-west-1.amazonaws.com/prod-media-asroma/prod/files/file/gm-942932c1-bb97-421d-ac1b-e8a6af37c56b-bilancioasroma2019web.pdf
+      file: web/roma_2018-19.pdf
+      note: >-
+        Relazione finanziaria annuale al 30/06/2019, enlazada en
+        asroma.com/it/club/corporate/bilanci-e-relazioni-2 con fecha 29/10/2019. Se usan las
+        cuentas consolidadas.
+"2019/20":
+  newcastle:
+    primary:
+      kind: companies_house
+      made_up_date: "2020-07-31"
+      note: Periodo alargado a 13 meses, del 01/07/2019 al 31/07/2020 (AA01 del 28/06/2021).
+"2020/21":
+  chelsea:
+    primary:
+      kind: companies_house
+      note: Cuentas de Fordstam Limited, hoy Chelsea FC Holdings Limited (mismo número).
+  milan:
+    primary:
+      kind: url
+      url: https://assets-eu-01.kc-usercontent.com:443/006f7528-416b-01e4-8ef2-ab6ab3f4e177/ff458afb-1e9e-41f1-b55e-8beb6ffcefa5/Bilanci-Relazioni-2020-21-ENG.pdf
+      file: web/milan_2020-21_en.pdf
+      note: >-
+        Financial Statements and Reports 2020/2021, enlazado en
+        acmilan.com/en/club/financial-report. Solo está la versión inglesa.
+"2022/23":
+  manchester_united:
+    primary:
+      kind: url
+      url: https://ir.manutd.com/~/media/Files/M/Manutd-IR/documents/manu-20230630-20f-taxonomyifrs-2022-tmbsf-v1.pdf
+      file: web/manchester_united_20-f_2023.pdf
+      note: Form 20-F del ejercicio 2022/23, enlazado en ir.manutd.com/financial-information/annual-reports/2023.aspx.
+  everton:
+    primary:
+      kind: companies_house

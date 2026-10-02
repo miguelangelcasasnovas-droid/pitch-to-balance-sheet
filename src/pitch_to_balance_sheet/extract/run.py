@@ -248,8 +248,13 @@ def _full(value: int | Decimal, multiplier: int) -> int:
     return int(full)
 
 
-def write_outputs(season: str, results: list[ClubResult]) -> list[str]:
-    fiscal_year_ends = {club.club_id: club.fiscal_year_end for club in load_clubs()}
+def write_outputs(season: str, results: list[ClubResult],
+                  fiscal_year_ends: dict[str, str] | None = None) -> list[str]:
+    """Cifras, cuadres y reexpresiones de la temporada a data/interim/. fiscal_year_ends (MM-DD
+    por club) hace falta para los clubes que no están en config/clubs.yaml o cuyo cierre de esa
+    temporada no es el habitual (las cuentas de referencia de las transacciones)."""
+    if fiscal_year_ends is None:
+        fiscal_year_ends = {club.club_id: club.fiscal_year_end for club in load_clubs()}
     figures, checks = [], []
     for result in results:
         spec = result.spec
